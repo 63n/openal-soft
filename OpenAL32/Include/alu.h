@@ -13,24 +13,20 @@
 #include "alMain.h"
 #include "alBuffer.h"
 #include "alFilter.h"
+#include "alAuxEffectSlot.h"
 
 #include "hrtf.h"
 #include "align.h"
+#include "math_defs.h"
 
 
-#define F_PI    (3.14159265358979323846f)
-#define F_PI_2  (1.57079632679489661923f)
-#define F_2PI   (6.28318530717958647692f)
+#define MAX_PITCH  (255)
 
-#ifndef FLT_EPSILON
-#define FLT_EPSILON (1.19209290e-07f)
-#endif
+/* Maximum number of buffer samples before the current pos needed for resampling. */
+#define MAX_PRE_SAMPLES 12
 
-#define DEG2RAD(x)  ((ALfloat)(x) * (F_PI/180.0f))
-#define RAD2DEG(x)  ((ALfloat)(x) * (180.0f/F_PI))
-
-
-#define MAX_PITCH  (10)
+/* Maximum number of buffer samples after the current pos needed for resampling. */
+#define MAX_POST_SAMPLES 12
 
 
 #ifdef __cplusplus
@@ -39,6 +35,30 @@ extern "C" {
 
 struct ALsource;
 struct ALvoice;
+struct ALeffectslot;
+
+
+/* The number of distinct scale and phase intervals within the filter table. */
+#define BSINC_SCALE_BITS  4
+#define BSINC_SCALE_COUNT (1<<BSINC_SCALE_BITS)
+#define BSINC_PHASE_BITS  4
+#define BSINC_PHASE_COUNT (1<<BSINC_PHASE_BITS)
+
+/* Interpolator state.  Kind of a misnomer since the interpolator itself is
+ * stateless.  This just keeps it from having to recompute scale-related
+ * mappings for every sample.
+ */
+typedef struct BsincState {
+    ALfloat sf; /* Scale interpolation factor. */
+    ALuint m;   /* Coefficient count. */
+    ALint l;    /* Left coefficient offset. */
+    struct {
+        const ALfloat *filter;   /* Filter coefficients. */
+        const ALfloat *scDelta;  /* Scale deltas. */
+        const ALfloat *phDelta;  /* Phase deltas. */
+        const ALfloat *spDelta;  /* Scale-phase deltas. */
+    } coeffs[BSINC_PHASE_COUNT];
+} BsincState;
 
 
 typedef union aluVector {
@@ -54,12 +74,12 @@ inline void aluVectorSet(aluVector *vector, ALfloat x, ALfloat y, ALfloat z, ALf
 }
 
 
-typedef union aluMatrix {
+typedef union aluMatrixf {
     alignas(16) ALfloat m[4][4];
-} aluMatrix;
+} aluMatrixf;
 
-inline void aluMatrixSetRow(aluMatrix *matrix, ALuint row,
-                            ALfloat m0, ALfloat m1, ALfloat m2, ALfloat m3)
+inline void aluMatrixfSetRow(aluMatrixf *matrix, ALuint row,
+                             ALfloat m0, ALfloat m1, ALfloat m2, ALfloat m3)
 {
     matrix->m[row][0] = m0;
     matrix->m[row][1] = m1;
@@ -67,15 +87,40 @@ inline void aluMatrixSetRow(aluMatrix *matrix, ALuint row,
     matrix->m[row][3] = m3;
 }
 
-inline void aluMatrixSet(aluMatrix *matrix, ALfloat m00, ALfloat m01, ALfloat m02, ALfloat m03,
-                                            ALfloat m10, ALfloat m11, ALfloat m12, ALfloat m13,
-                                            ALfloat m20, ALfloat m21, ALfloat m22, ALfloat m23,
-                                            ALfloat m30, ALfloat m31, ALfloat m32, ALfloat m33)
+inline void aluMatrixfSet(aluMatrixf *matrix, ALfloat m00, ALfloat m01, ALfloat m02, ALfloat m03,
+                                              ALfloat m10, ALfloat m11, ALfloat m12, ALfloat m13,
+                                              ALfloat m20, ALfloat m21, ALfloat m22, ALfloat m23,
+                                              ALfloat m30, ALfloat m31, ALfloat m32, ALfloat m33)
 {
-    aluMatrixSetRow(matrix, 0, m00, m01, m02, m03);
-    aluMatrixSetRow(matrix, 1, m10, m11, m12, m13);
-    aluMatrixSetRow(matrix, 2, m20, m21, m22, m23);
-    aluMatrixSetRow(matrix, 3, m30, m31, m32, m33);
+    aluMatrixfSetRow(matrix, 0, m00, m01, m02, m03);
+    aluMatrixfSetRow(matrix, 1, m10, m11, m12, m13);
+    aluMatrixfSetRow(matrix, 2, m20, m21, m22, m23);
+    aluMatrixfSetRow(matrix, 3, m30, m31, m32, m33);
+}
+
+
+typedef union aluMatrixd {
+    alignas(16) ALdouble m[4][4];
+} aluMatrixd;
+
+inline void aluMatrixdSetRow(aluMatrixd *matrix, ALuint row,
+                             ALdouble m0, ALdouble m1, ALdouble m2, ALdouble m3)
+{
+    matrix->m[row][0] = m0;
+    matrix->m[row][1] = m1;
+    matrix->m[row][2] = m2;
+    matrix->m[row][3] = m3;
+}
+
+inline void aluMatrixdSet(aluMatrixd *matrix, ALdouble m00, ALdouble m01, ALdouble m02, ALdouble m03,
+                                              ALdouble m10, ALdouble m11, ALdouble m12, ALdouble m13,
+                                              ALdouble m20, ALdouble m21, ALdouble m22, ALdouble m23,
+                                              ALdouble m30, ALdouble m31, ALdouble m32, ALdouble m33)
+{
+    aluMatrixdSetRow(matrix, 0, m00, m01, m02, m03);
+    aluMatrixdSetRow(matrix, 1, m10, m11, m12, m13);
+    aluMatrixdSetRow(matrix, 2, m20, m21, m22, m23);
+    aluMatrixdSetRow(matrix, 3, m30, m31, m32, m33);
 }
 
 
@@ -93,19 +138,19 @@ typedef struct MixGains {
     ALfloat Target;
 } MixGains;
 
+typedef struct MixHrtfParams {
+    const HrtfParams *Target;
+    HrtfParams *Current;
+    struct {
+        alignas(16) ALfloat Coeffs[HRIR_LENGTH][2];
+        ALint Delay[2];
+    } Steps;
+} MixHrtfParams;
 
 typedef struct DirectParams {
     ALfloat (*OutBuffer)[BUFFERSIZE];
     ALuint OutChannels;
 
-    /* If not 'moving', gain/coefficients are set directly without fading. */
-    ALboolean Moving;
-    /* Stepping counter for gain/coefficient fading. */
-    ALuint Counter;
-    /* Last direction (relative to listener) and gain of a moving source. */
-    aluVector LastDir;
-    ALfloat LastGain;
-
     struct {
         enum ActiveFilters ActiveType;
         ALfilterState LowPass;
@@ -113,17 +158,20 @@ typedef struct DirectParams {
     } Filters[MAX_INPUT_CHANNELS];
 
     struct {
-        HrtfParams Params;
+        HrtfParams Current;
+        HrtfParams Target;
         HrtfState State;
     } Hrtf[MAX_INPUT_CHANNELS];
-    MixGains Gains[MAX_INPUT_CHANNELS][MAX_OUTPUT_CHANNELS];
+
+    struct {
+        ALfloat Current[MAX_OUTPUT_CHANNELS];
+        ALfloat Target[MAX_OUTPUT_CHANNELS];
+    } Gains[MAX_INPUT_CHANNELS];
 } DirectParams;
 
 typedef struct SendParams {
     ALfloat (*OutBuffer)[BUFFERSIZE];
-
-    ALboolean Moving;
-    ALuint Counter;
+    ALuint OutChannels;
 
     struct {
         enum ActiveFilters ActiveType;
@@ -131,21 +179,23 @@ typedef struct SendParams {
         ALfilterState HighPass;
     } Filters[MAX_INPUT_CHANNELS];
 
-    /* Gain control, which applies to all input channels to a single (mono)
-     * output buffer. */
-    MixGains Gain;
+    struct {
+        ALfloat Current[MAX_OUTPUT_CHANNELS];
+        ALfloat Target[MAX_OUTPUT_CHANNELS];
+    } Gains[MAX_INPUT_CHANNELS];
 } SendParams;
 
 
-typedef const ALfloat* (*ResamplerFunc)(const ALfloat *src, ALuint frac, ALuint increment,
-                                        ALfloat *restrict dst, ALuint dstlen);
+typedef const ALfloat* (*ResamplerFunc)(const BsincState *state,
+    const ALfloat *src, ALuint frac, ALuint increment, ALfloat *restrict dst, ALuint dstlen
+);
 
 typedef void (*MixerFunc)(const ALfloat *data, ALuint OutChans,
                           ALfloat (*restrict OutBuffer)[BUFFERSIZE], struct MixGains *Gains,
                           ALuint Counter, ALuint OutPos, ALuint BufferSize);
 typedef void (*HrtfMixerFunc)(ALfloat (*restrict OutBuffer)[BUFFERSIZE], const ALfloat *data,
                               ALuint Counter, ALuint Offset, ALuint OutPos,
-                              const ALuint IrSize, const HrtfParams *hrtfparams,
+                              const ALuint IrSize, const MixHrtfParams *hrtfparams,
                               HrtfState *hrtfstate, ALuint BufferSize);
 
 
@@ -202,56 +252,92 @@ inline ALuint64 clampu64(ALuint64 val, ALuint64 min, ALuint64 max)
 { return minu64(max, maxu64(min, val)); }
 
 
-extern alignas(16) ALfloat CubicLUT[FRACTIONONE][4];
+union ResamplerCoeffs {
+    ALfloat FIR4[FRACTIONONE][4];
+    ALfloat FIR8[FRACTIONONE][8];
+};
+extern alignas(16) union ResamplerCoeffs ResampleCoeffs;
+
+extern alignas(16) const ALfloat bsincTab[18840];
 
 
 inline ALfloat lerp(ALfloat val1, ALfloat val2, ALfloat mu)
 {
     return val1 + (val2-val1)*mu;
 }
-inline ALfloat cubic(ALfloat val0, ALfloat val1, ALfloat val2, ALfloat val3, ALuint frac)
+inline ALfloat resample_fir4(ALfloat val0, ALfloat val1, ALfloat val2, ALfloat val3, ALuint frac)
 {
-    const ALfloat *k = CubicLUT[frac];
+    const ALfloat *k = ResampleCoeffs.FIR4[frac];
     return k[0]*val0 + k[1]*val1 + k[2]*val2 + k[3]*val3;
+}
+inline ALfloat resample_fir8(ALfloat val0, ALfloat val1, ALfloat val2, ALfloat val3, ALfloat val4, ALfloat val5, ALfloat val6, ALfloat val7, ALuint frac)
+{
+    const ALfloat *k = ResampleCoeffs.FIR8[frac];
+    return k[0]*val0 + k[1]*val1 + k[2]*val2 + k[3]*val3 +
+           k[4]*val4 + k[5]*val5 + k[6]*val6 + k[7]*val7;
 }
 
 
-void aluInitResamplers(void);
+void aluInitMixer(void);
 
 ALvoid aluInitPanning(ALCdevice *Device);
 
-/**
- * ComputeDirectionalGains
- *
- * Sets channel gains based on a direction. The direction must be a 3-component
- * vector no longer than 1 unit.
- */
-void ComputeDirectionalGains(const ALCdevice *device, const ALfloat dir[3], ALfloat ingain, ALfloat gains[MAX_OUTPUT_CHANNELS]);
+void aluInitEffectPanning(struct ALeffectslot *slot);
 
 /**
- * ComputeAngleGains
+ * CalcDirectionCoeffs
  *
- * Sets channel gains based on angle and elevation. The angle and elevation
- * parameters are in radians, going right and up respectively.
+ * Calculates ambisonic coefficients based on a direction vector. The vector
+ * must not be longer than 1 unit.
  */
-void ComputeAngleGains(const ALCdevice *device, ALfloat angle, ALfloat elevation, ALfloat ingain, ALfloat gains[MAX_OUTPUT_CHANNELS]);
+void CalcDirectionCoeffs(const ALfloat dir[3], ALfloat coeffs[MAX_AMBI_COEFFS]);
+
+/**
+ * CalcXYZCoeffs
+ *
+ * Same as CalcDirectionCoeffs except the direction is specified as separate x,
+ * y, and z parameters instead of an array.
+ */
+inline void CalcXYZCoeffs(ALfloat x, ALfloat y, ALfloat z, ALfloat coeffs[MAX_AMBI_COEFFS])
+{
+    ALfloat dir[3] = { x, y, z };
+    CalcDirectionCoeffs(dir, coeffs);
+}
+
+/**
+ * CalcAngleCoeffs
+ *
+ * Calculates ambisonic coefficients based on angle and elevation. The angle
+ * and elevation parameters are in radians, going right and up respectively.
+ */
+void CalcAngleCoeffs(ALfloat angle, ALfloat elevation, ALfloat coeffs[MAX_AMBI_COEFFS]);
 
 /**
  * ComputeAmbientGains
  *
- * Sets channel gains for ambient, omni-directional sounds.
+ * Computes channel gains for ambient, omni-directional sounds.
  */
-void ComputeAmbientGains(const ALCdevice *device, ALfloat ingain, ALfloat gains[MAX_OUTPUT_CHANNELS]);
+void ComputeAmbientGains(const ChannelConfig *chancoeffs, ALuint numchans, ALfloat ingain, ALfloat gains[MAX_OUTPUT_CHANNELS]);
 
 /**
- * ComputeBFormatGains
+ * ComputePanningGains
  *
- * Sets channel gains for a given (first-order) B-Format channel. The matrix is
- * a 1x4 'slice' of the rotation matrix for a given channel used to orient the
- * coefficients.
+ * Computes panning gains using the given channel decoder coefficients and the
+ * pre-calculated direction or angle coefficients.
  */
-void ComputeBFormatGains(const ALCdevice *device, const ALfloat mtx[4], ALfloat ingain, ALfloat gains[MAX_OUTPUT_CHANNELS]);
+void ComputePanningGains(const ChannelConfig *chancoeffs, ALuint numchans, const ALfloat coeffs[MAX_AMBI_COEFFS], ALfloat ingain, ALfloat gains[MAX_OUTPUT_CHANNELS]);
 
+/**
+ * ComputeFirstOrderGains
+ *
+ * Sets channel gains for a first-order ambisonics input channel. The matrix is
+ * a 1x4 'slice' of a transform matrix for the input channel, used to scale and
+ * orient the sound samples.
+ */
+void ComputeFirstOrderGains(const ChannelConfig *chancoeffs, ALuint numchans, const ALfloat mtx[4], ALfloat ingain, ALfloat gains[MAX_OUTPUT_CHANNELS]);
+
+
+ALvoid UpdateContextSources(ALCcontext *context);
 
 ALvoid CalcSourceParams(struct ALvoice *voice, const struct ALsource *source, const ALCcontext *ALContext);
 ALvoid CalcNonAttnSourceParams(struct ALvoice *voice, const struct ALsource *source, const ALCcontext *ALContext);
