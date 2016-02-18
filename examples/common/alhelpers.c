@@ -108,7 +108,7 @@ ALenum GetFormat(ALenum channels, ALenum type, LPALISBUFFERFORMATSUPPORTEDSOFT p
             else if(channels == AL_5POINT1_SOFT) format = AL_5POINT1_8_SOFT;
             else if(channels == AL_6POINT1_SOFT) format = AL_6POINT1_8_SOFT;
             else if(channels == AL_7POINT1_SOFT) format = AL_7POINT1_8_SOFT;
-            else if(channels == AL_RME22_SOFT) format = AL_RME22_8_SOFT;
+            else if(channels == AL_XRME22_SOFT) format = AL_XRME22_8_SOFT;
         }
         else if(type == AL_UNSIGNED_SHORT_SOFT || type == AL_SHORT_SOFT)
         {
@@ -118,7 +118,7 @@ ALenum GetFormat(ALenum channels, ALenum type, LPALISBUFFERFORMATSUPPORTEDSOFT p
             else if(channels == AL_5POINT1_SOFT) format = AL_5POINT1_16_SOFT;
             else if(channels == AL_6POINT1_SOFT) format = AL_6POINT1_16_SOFT;
             else if(channels == AL_7POINT1_SOFT) format = AL_7POINT1_16_SOFT;
-            else if(channels == AL_RME22_SOFT) format = AL_RME22_16_SOFT;
+            else if(channels == AL_XRME22_SOFT) format = AL_XRME22_16_SOFT;
         }
         else if(type == AL_UNSIGNED_BYTE3_SOFT || type == AL_BYTE3_SOFT ||
                 type == AL_UNSIGNED_INT_SOFT || type == AL_INT_SOFT ||
@@ -130,7 +130,7 @@ ALenum GetFormat(ALenum channels, ALenum type, LPALISBUFFERFORMATSUPPORTEDSOFT p
             else if(channels == AL_5POINT1_SOFT) format = AL_5POINT1_32F_SOFT;
             else if(channels == AL_6POINT1_SOFT) format = AL_6POINT1_32F_SOFT;
             else if(channels == AL_7POINT1_SOFT) format = AL_7POINT1_32F_SOFT;
-            else if(channels == AL_RME22_SOFT) format = AL_RME22_32F_SOFT;
+            else if(channels == AL_XRME22_SOFT) format = AL_XRME22_32F_SOFT;
         }
 
         if(format != AL_NONE && !palIsBufferFormatSupportedSOFT(format))
@@ -145,7 +145,7 @@ ALenum GetFormat(ALenum channels, ALenum type, LPALISBUFFERFORMATSUPPORTEDSOFT p
             else if(channels == AL_5POINT1_SOFT) format = AL_5POINT1_32F_SOFT;
             else if(channels == AL_6POINT1_SOFT) format = AL_6POINT1_32F_SOFT;
             else if(channels == AL_7POINT1_SOFT) format = AL_7POINT1_32F_SOFT;
-            else if(channels == AL_RME22_SOFT) format = AL_RME22_32F_SOFT;
+            else if(channels == AL_XRME22_SOFT) format = AL_XRME22_32F_SOFT;
 
             if(format != AL_NONE && !palIsBufferFormatSupportedSOFT(format))
                 format = AL_NONE;
@@ -159,7 +159,7 @@ ALenum GetFormat(ALenum channels, ALenum type, LPALISBUFFERFORMATSUPPORTEDSOFT p
             else if(channels == AL_5POINT1_SOFT) format = AL_5POINT1_16_SOFT;
             else if(channels == AL_6POINT1_SOFT) format = AL_6POINT1_16_SOFT;
             else if(channels == AL_7POINT1_SOFT) format = AL_7POINT1_16_SOFT;
-            else if(channels == AL_RME22_SOFT) format = AL_RME22_16_SOFT;
+            else if(channels == AL_XRME22_SOFT) format = AL_XRME22_16_SOFT;
 
             if(format != AL_NONE && !palIsBufferFormatSupportedSOFT(format))
                 format = AL_NONE;
@@ -173,7 +173,7 @@ ALenum GetFormat(ALenum channels, ALenum type, LPALISBUFFERFORMATSUPPORTEDSOFT p
             else if(channels == AL_5POINT1_SOFT) format = AL_5POINT1_8_SOFT;
             else if(channels == AL_6POINT1_SOFT) format = AL_6POINT1_8_SOFT;
             else if(channels == AL_7POINT1_SOFT) format = AL_7POINT1_8_SOFT;
-            else if(channels == AL_RME22_SOFT) format = AL_RME22_8_SOFT;
+            else if(channels == AL_XRME22_SOFT) format = AL_XRME22_8_SOFT;
 
             if(format != AL_NONE && !palIsBufferFormatSupportedSOFT(format))
                 format = AL_NONE;
@@ -201,8 +201,8 @@ ALenum GetFormat(ALenum channels, ALenum type, LPALISBUFFERFORMATSUPPORTEDSOFT p
                 format = alGetEnumValue("AL_FORMAT_61CHN8");
             else if(channels == AL_7POINT1_SOFT)
                 format = alGetEnumValue("AL_FORMAT_71CHN8");
-            else if(channels == AL_RME22_SOFT)
-                format = alGetEnumValue("AL_FORMAT_RME22CHN8");
+            else if(channels == AL_XRME22_SOFT)
+                format = alGetEnumValue("AL_FORMAT_XRME22CHN8");
         }
     }
     else if(type == AL_SHORT_SOFT)
@@ -221,8 +221,8 @@ ALenum GetFormat(ALenum channels, ALenum type, LPALISBUFFERFORMATSUPPORTEDSOFT p
                 format = alGetEnumValue("AL_FORMAT_61CHN16");
             else if(channels == AL_7POINT1_SOFT)
                 format = alGetEnumValue("AL_FORMAT_71CHN16");
-            else if(channels == AL_RME22_SOFT)
-                format = alGetEnumValue("AL_FORMAT_RME22CHN16");
+            else if(channels == AL_XRME22_SOFT)
+                format = alGetEnumValue("AL_FORMAT_XRME22CHN16");
         }
     }
     else if(type == AL_FLOAT_SOFT && alIsExtensionPresent("AL_EXT_FLOAT32"))
@@ -241,8 +241,8 @@ ALenum GetFormat(ALenum channels, ALenum type, LPALISBUFFERFORMATSUPPORTEDSOFT p
                 format = alGetEnumValue("AL_FORMAT_61CHN32");
             else if(channels == AL_7POINT1_SOFT)
                 format = alGetEnumValue("AL_FORMAT_71CHN32");
-            else if(channels == AL_RME22_SOFT)
-                format = alGetEnumValue("AL_FORMAT_RME22CHN32");
+            else if(channels == AL_XRME22_SOFT)
+                format = alGetEnumValue("AL_FORMAT_XRME22CHN32");
         }
     }
     else if(type == AL_DOUBLE_SOFT && alIsExtensionPresent("AL_EXT_DOUBLE"))
@@ -284,7 +284,7 @@ const char *ChannelsName(ALenum chans)
     case AL_5POINT1_SOFT: return "5.1 Surround";
     case AL_6POINT1_SOFT: return "6.1 Surround";
     case AL_7POINT1_SOFT: return "7.1 Surround";
-    case AL_RME22_SOFT: return   "RME 22 Chan";
+    case AL_XRME22_SOFT: return   "RME 22 Chan";
     }
     return "Unknown Channels";
 }
@@ -317,8 +317,8 @@ ALsizei FramesToBytes(ALsizei size, ALenum channels, ALenum type)
     case AL_5POINT1_SOFT: size *= 6; break;
     case AL_6POINT1_SOFT: size *= 7; break;
     case AL_7POINT1_SOFT: size *= 8; break;
-    // case AL_RME22_SOFT:   size *= 16; break;
-    case AL_RME22_SOFT:   size *= 22; break;
+    // case AL_XRME22_SOFT:   size *= 16; break;
+    case AL_XRME22_SOFT:   size *= 22; break;
     }
 
     switch(type)

@@ -370,7 +370,7 @@ static const ALCenums enumeration[] = {
     DECL(ALC_6POINT1_SOFT),
     DECL(ALC_7POINT1_SOFT),
 
-    DECL(ALC_RME22_SOFT),
+    DECL(ALC_XRME22_SOFT),
 
     DECL(ALC_BYTE_SOFT),
     DECL(ALC_UNSIGNED_BYTE_SOFT),
@@ -466,9 +466,9 @@ static const ALCenums enumeration[] = {
     DECL(AL_FORMAT_71CHN8),
     DECL(AL_FORMAT_71CHN16),
     DECL(AL_FORMAT_71CHN32),
-    DECL(AL_FORMAT_RME22CHN8),
-    DECL(AL_FORMAT_RME22CHN16),
-    DECL(AL_FORMAT_RME22CHN32),
+    DECL(AL_FORMAT_XRME22CHN8),
+    DECL(AL_FORMAT_XRME22CHN16),
+    DECL(AL_FORMAT_XRME22CHN32),
     DECL(AL_FORMAT_REAR8),
     DECL(AL_FORMAT_REAR16),
     DECL(AL_FORMAT_REAR32),
@@ -480,7 +480,7 @@ static const ALCenums enumeration[] = {
     DECL(AL_FORMAT_51CHN_MULAW),
     DECL(AL_FORMAT_61CHN_MULAW),
     DECL(AL_FORMAT_71CHN_MULAW),
-    DECL(AL_FORMAT_RME22CHN_MULAW),
+    DECL(AL_FORMAT_XRME22CHN_MULAW),
     DECL(AL_FORMAT_REAR_MULAW),
     DECL(AL_FORMAT_MONO_ALAW_EXT),
     DECL(AL_FORMAT_STEREO_ALAW_EXT),
@@ -506,9 +506,9 @@ static const ALCenums enumeration[] = {
     DECL(AL_7POINT1_8_SOFT),
     DECL(AL_7POINT1_16_SOFT),
     DECL(AL_7POINT1_32F_SOFT),
-    DECL(AL_RME22_8_SOFT),
-    DECL(AL_RME22_16_SOFT),
-    DECL(AL_RME22_32F_SOFT),
+    DECL(AL_XRME22_8_SOFT),
+    DECL(AL_XRME22_16_SOFT),
+    DECL(AL_XRME22_32F_SOFT),
     DECL(AL_FORMAT_BFORMAT2D_8),
     DECL(AL_FORMAT_BFORMAT2D_16),
     DECL(AL_FORMAT_BFORMAT2D_FLOAT32),
@@ -525,7 +525,7 @@ static const ALCenums enumeration[] = {
     DECL(AL_5POINT1_SOFT),
     DECL(AL_6POINT1_SOFT),
     DECL(AL_7POINT1_SOFT),
-    DECL(AL_RME22_SOFT),
+    DECL(AL_XRME22_SOFT),
 
     DECL(AL_BYTE_SOFT),
     DECL(AL_UNSIGNED_BYTE_SOFT),
@@ -1341,7 +1341,7 @@ const ALCchar *DevFmtChannelsString(enum DevFmtChannels chans)
     case DevFmtX51Rear: return "5.1 Surround (Rear)";
     case DevFmtX61: return "6.1 Surround";
     case DevFmtX71: return "7.1 Surround";
-    case DevFmtRME22: return "RME Fireface 22Chan";
+    case DevFmtXRME22: return "RME Fireface 22Chan";
     case DevFmtBFormat3D: return "B-Format 3D";
     }
     return "(unknown channels)";
@@ -1373,8 +1373,8 @@ ALuint ChannelsFromDevFmt(enum DevFmtChannels chans)
     case DevFmtX51Rear: return 6;
     case DevFmtX61: return 7;
     case DevFmtX71: return 8;
-    // case DevFmtRME22: return 16;
-    case DevFmtRME22: return 22;
+    // case DevFmtXRME22: return 16;
+    case DevFmtXRME22: return 22;
     case DevFmtBFormat3D: return 4;
     }
     return 0;
@@ -1412,9 +1412,9 @@ DECL_CONST static ALboolean DecomposeDevFormat(ALenum format,
         { AL_FORMAT_71CHN16, DevFmtX71, DevFmtShort },
         { AL_FORMAT_71CHN32, DevFmtX71, DevFmtFloat },
 
-        { AL_FORMAT_RME22CHN8,  DevFmtRME22, DevFmtUByte },
-        { AL_FORMAT_RME22CHN16, DevFmtRME22, DevFmtShort },
-        { AL_FORMAT_RME22CHN32, DevFmtRME22, DevFmtFloat },
+        { AL_FORMAT_XRME22CHN8,  DevFmtXRME22, DevFmtUByte },
+        { AL_FORMAT_XRME22CHN16, DevFmtXRME22, DevFmtShort },
+        { AL_FORMAT_XRME22CHN32, DevFmtXRME22, DevFmtFloat },
     };
     ALuint i;
 
@@ -1457,7 +1457,7 @@ DECL_CONST static ALCboolean IsValidALCChannels(ALCenum channels)
         case ALC_5POINT1_SOFT:
         case ALC_6POINT1_SOFT:
         case ALC_7POINT1_SOFT:
-        case ALC_RME22_SOFT:
+        case ALC_XRME22_SOFT:
             return ALC_TRUE;
     }
     return ALC_FALSE;
@@ -1546,7 +1546,7 @@ void SetDefaultWFXChannelOrder(ALCdevice *device)
         device->ChannelName[5] = BackRight;
         device->ChannelName[6] = SideLeft;
         device->ChannelName[7] = SideRight;
-    case DevFmtRME22:
+    case DevFmtXRME22:
         device->ChannelName[0]  = FrontLeft;
         device->ChannelName[1]  = FrontRight;
         device->ChannelName[2]  = FrontCenter;
@@ -1610,7 +1610,7 @@ void SetDefaultChannelOrder(ALCdevice *device)
         device->ChannelName[6] = SideLeft;
         device->ChannelName[7] = SideRight;
         return;
-    case DevFmtRME22:
+    case DevFmtXRME22:
         device->ChannelName[0]  = FrontLeft;
         device->ChannelName[1]  = FrontRight;
         device->ChannelName[2]  = FrontCenter;
@@ -3412,7 +3412,7 @@ ALC_API ALCdevice* ALC_APIENTRY alcOpenDevice(const ALCchar *deviceName)
             { "surround61", DevFmtX61    },
             { "surround71", DevFmtX71    },
             { "surround51rear", DevFmtX51Rear },
-            { "RME22",      DevFmtRME22 },
+            { "RME22",      DevFmtXRME22 },
         };
         size_t i;
 

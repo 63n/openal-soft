@@ -237,7 +237,7 @@ AL_API ALvoid AL_APIENTRY alBufferData(ALuint buffer, ALenum format, const ALvoi
                 case UserFmtX51: newformat = AL_FORMAT_51CHN32; break;
                 case UserFmtX61: newformat = AL_FORMAT_61CHN32; break;
                 case UserFmtX71: newformat = AL_FORMAT_71CHN32; break;
-                case UserFmtRME22: newformat = AL_FORMAT_RME22CHN32; break;
+                case UserFmtXRME22: newformat = AL_FORMAT_XRME22CHN32; break;
                 case UserFmtBFormat2D: newformat = AL_FORMAT_BFORMAT2D_FLOAT32; break;
                 case UserFmtBFormat3D: newformat = AL_FORMAT_BFORMAT3D_FLOAT32; break;
             }
@@ -267,7 +267,7 @@ AL_API ALvoid AL_APIENTRY alBufferData(ALuint buffer, ALenum format, const ALvoi
                 case UserFmtX51: newformat = AL_FORMAT_51CHN16; break;
                 case UserFmtX61: newformat = AL_FORMAT_61CHN16; break;
                 case UserFmtX71: newformat = AL_FORMAT_71CHN16; break;
-                case UserFmtRME22: newformat = AL_FORMAT_RME22CHN16; break;
+                case UserFmtXRME22: newformat = AL_FORMAT_XRME22CHN16; break;
                 case UserFmtBFormat2D: newformat = AL_FORMAT_BFORMAT2D_16; break;
                 case UserFmtBFormat3D: newformat = AL_FORMAT_BFORMAT3D_16; break;
             }
@@ -295,7 +295,7 @@ AL_API ALvoid AL_APIENTRY alBufferData(ALuint buffer, ALenum format, const ALvoi
                 case UserFmtX51: newformat = AL_FORMAT_51CHN16; break;
                 case UserFmtX61: newformat = AL_FORMAT_61CHN16; break;
                 case UserFmtX71: newformat = AL_FORMAT_71CHN16; break;
-                case UserFmtRME22: newformat = AL_FORMAT_RME22CHN16; break;
+                case UserFmtXRME22: newformat = AL_FORMAT_XRME22CHN16; break;
                 case UserFmtBFormat2D: newformat = AL_FORMAT_BFORMAT2D_16; break;
                 case UserFmtBFormat3D: newformat = AL_FORMAT_BFORMAT3D_16; break;
             }
@@ -325,7 +325,7 @@ AL_API ALvoid AL_APIENTRY alBufferData(ALuint buffer, ALenum format, const ALvoi
                 case UserFmtX51: newformat = AL_FORMAT_51CHN16; break;
                 case UserFmtX61: newformat = AL_FORMAT_61CHN16; break;
                 case UserFmtX71: newformat = AL_FORMAT_71CHN16; break;
-                case UserFmtRME22: newformat = AL_FORMAT_RME22CHN16; break;
+                case UserFmtXRME22: newformat = AL_FORMAT_XRME22CHN16; break;
                 case UserFmtBFormat2D: newformat = AL_FORMAT_BFORMAT2D_16; break;
                 case UserFmtBFormat3D: newformat = AL_FORMAT_BFORMAT3D_16; break;
             }
@@ -1164,8 +1164,8 @@ ALuint ChannelsFromUserFmt(enum UserFmtChannels chans)
     case UserFmtX51: return 6;
     case UserFmtX61: return 7;
     case UserFmtX71: return 8;
-    // case UserFmtRME22: return 16;
-    case UserFmtRME22: return 22;
+    // case UserFmtXRME22: return 16;
+    case UserFmtXRME22: return 22;
     case UserFmtBFormat2D: return 3;
     case UserFmtBFormat3D: return 4;
     }
@@ -1225,10 +1225,10 @@ static ALboolean DecomposeUserFormat(ALenum format, enum UserFmtChannels *chans,
         { AL_FORMAT_71CHN32,     UserFmtX71, UserFmtFloat },
         { AL_FORMAT_71CHN_MULAW, UserFmtX71, UserFmtMulaw },
 
-        { AL_FORMAT_RME22CHN8,      UserFmtRME22, UserFmtUByte },
-        { AL_FORMAT_RME22CHN16,     UserFmtRME22, UserFmtShort },
-        { AL_FORMAT_RME22CHN32,     UserFmtRME22, UserFmtFloat },
-        { AL_FORMAT_RME22CHN_MULAW, UserFmtRME22, UserFmtMulaw },
+        { AL_FORMAT_XRME22CHN8,      UserFmtXRME22, UserFmtUByte },
+        { AL_FORMAT_XRME22CHN16,     UserFmtXRME22, UserFmtShort },
+        { AL_FORMAT_XRME22CHN32,     UserFmtXRME22, UserFmtFloat },
+        { AL_FORMAT_XRME22CHN_MULAW, UserFmtXRME22, UserFmtMulaw },
 
         { AL_FORMAT_BFORMAT2D_8,       UserFmtBFormat2D, UserFmtUByte },
         { AL_FORMAT_BFORMAT2D_16,      UserFmtBFormat2D, UserFmtShort },
@@ -1276,8 +1276,8 @@ ALuint ChannelsFromFmt(enum FmtChannels chans)
     case FmtX51: return 6;
     case FmtX61: return 7;
     case FmtX71: return 8;
-    // case FmtRME22: return 16;
-    case FmtRME22: return 22;
+    // case FmtXRME22: return 16;
+    case FmtXRME22: return 22;
     case FmtBFormat2D: return 3;
     case FmtBFormat3D: return 4;
     }
@@ -1321,9 +1321,9 @@ static ALboolean DecomposeFormat(ALenum format, enum FmtChannels *chans, enum Fm
         { AL_7POINT1_16_SOFT,  FmtX71, FmtShort },
         { AL_7POINT1_32F_SOFT, FmtX71, FmtFloat },
 
-        { AL_RME22_8_SOFT,   FmtRME22, FmtByte  },
-        { AL_RME22_16_SOFT,  FmtRME22, FmtShort },
-        { AL_RME22_32F_SOFT, FmtRME22, FmtFloat },
+        { AL_XRME22_8_SOFT,   FmtXRME22, FmtByte  },
+        { AL_XRME22_16_SOFT,  FmtXRME22, FmtShort },
+        { AL_XRME22_32F_SOFT, FmtXRME22, FmtFloat },
 
         { AL_FORMAT_BFORMAT2D_8,       FmtBFormat2D, FmtByte },
         { AL_FORMAT_BFORMAT2D_16,      FmtBFormat2D, FmtShort },
@@ -1417,7 +1417,7 @@ static ALboolean IsValidChannels(ALenum channels)
         case AL_5POINT1_SOFT:
         case AL_6POINT1_SOFT:
         case AL_7POINT1_SOFT:
-        case AL_RME22_SOFT:
+        case AL_XRME22_SOFT:
             return AL_TRUE;
     }
     return AL_FALSE;

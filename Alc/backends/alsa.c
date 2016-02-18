@@ -756,7 +756,7 @@ static ALCboolean ALCplaybackAlsa_reset(ALCplaybackAlsa *self)
             DevFmtX51,
             DevFmtX71,
             DevFmtMono,
-            DevFmtRME22,
+            DevFmtXRME22,
         };
         size_t k;
 

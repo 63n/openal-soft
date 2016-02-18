@@ -459,8 +459,8 @@ static ALCboolean ALCdsoundPlayback_reset(ALCdsoundPlayback *self)
                 device->FmtChans = DevFmtX51Rear;
             else if(speakers == DSSPEAKER_7POINT1 || speakers == DSSPEAKER_7POINT1_SURROUND)
                 device->FmtChans = DevFmtX71;
-            else if(speakers == DSSPEAKER_RME22)
-                device->FmtChans = DevFmtRME22;
+            else if(speakers == DSSPEAKER_XRME22)
+                device->FmtChans = DevFmtXRME22;
             else
                 ERR("Unknown system speaker config: 0x%lx\n", speakers);
         }
@@ -520,7 +520,7 @@ static ALCboolean ALCdsoundPlayback_reset(ALCdsoundPlayback *self)
                                            SPEAKER_SIDE_LEFT |
                                            SPEAKER_SIDE_RIGHT;
                 break;
-            case DevFmtRME22:
+            case DevFmtXRME22:
                 OutputType.dwChannelMask = SPEAKER_FRONT_LEFT |		// Really need to be Speakers 1-22
                                            SPEAKER_FRONT_RIGHT |
                                            SPEAKER_FRONT_CENTER |
@@ -797,7 +797,7 @@ static ALCenum ALCdsoundCapture_open(ALCdsoundCapture *self, const ALCchar *devi
                                           SPEAKER_SIDE_LEFT |
                                           SPEAKER_SIDE_RIGHT;
                 break;
-            case DevFmtRME22:
+            case DevFmtXRME22:
                 OutputType.dwChannelMask = SPEAKER_FRONT_LEFT |		// Really need to be Speakers 1-22
                                            SPEAKER_FRONT_RIGHT |
                                            SPEAKER_FRONT_CENTER |

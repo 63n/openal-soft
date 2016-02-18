@@ -262,8 +262,8 @@ static bool LoadChannelSetup(ALCdevice *device)
             channels = surround71_chans;
             count = COUNTOF(surround71_chans);
             break;
-        case DevFmtRME22:
-            layout = "RME22";
+        case DevFmtXRME22:
+            layout = "XRME22";
             channels = rme22_chans;
             count = COUNTOF(rme22_chans);
             break;
@@ -366,7 +366,7 @@ ALvoid aluInitPanning(ALCdevice *device)
         { Aux2, { { 0.0f, 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f, 0.0f } } },
         { Aux3, { { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f, 1.0f } } },
 
-	}, RME22Cfg[21] = { // FIX this later. See: https://github.com/kcat/openal-soft/commit/4d36ef65b2ec1cd3122bf9ee615df452f003d014
+	}, XRME22Cfg[21] = { // FIX this later. See: https://github.com/kcat/openal-soft/commit/4d36ef65b2ec1cd3122bf9ee615df452f003d014
         { FrontLeft,   { { 0.167065f,  0.200583f,  0.172695f, 0.0f, 0.0f, 0.0f, 0.0f,  0.029855f,  0.186407f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -0.039241f,  0.068910f }, { 0.167065f,  0.153519f,  0.132175f, 0.0f } } },
         { FrontRight,  { { 0.167065f,  0.200583f, -0.172695f, 0.0f, 0.0f, 0.0f, 0.0f,  0.029855f, -0.186407f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -0.039241f, -0.068910f }, { 0.167065f,  0.153519f, -0.132175f, 0.0f } } },
         { FrontCenter, { { 0.109403f,  0.179490f,  0.000000f, 0.0f, 0.0f, 0.0f, 0.0f,  0.142031f,  0.000000f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,  0.072024f,  0.000000f }, { 0.109403f,  0.137375f,  0.000000f, 0.0f } } },
@@ -464,9 +464,9 @@ ALvoid aluInitPanning(ALCdevice *device)
             chanmap = X71Cfg;
             break;
 
-        case DevFmtRME22:
-            count = COUNTOF(RME22Cfg);
-            chanmap = RME22Cfg;
+        case DevFmtXRME22:
+            count = COUNTOF(XRME22Cfg);
+            chanmap = XRME22Cfg;
             break;
 
         case DevFmtBFormat3D:

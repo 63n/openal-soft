@@ -337,7 +337,7 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
         { BackRight,   DEG2RAD( 150.0f), DEG2RAD(0.0f) },
         { SideLeft,    DEG2RAD( -90.0f), DEG2RAD(0.0f) },
         { SideRight,   DEG2RAD(  90.0f), DEG2RAD(0.0f) }
-    }, RME22Map[22] = {
+    }, XRME22Map[22] = {
         { FrontLeft,   0.0f, 0.0f },
         { FrontRight,  0.0f, 0.0f },
         { FrontCenter, 0.0f, 0.0f },
@@ -487,8 +487,8 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
         num_channels = 8;
         break;
 
-    case FmtRME22:
-        chans = RME22Map;
+    case FmtXRME22:
+        chans = XRME22Map;
         num_channels = 22;
         break;
 

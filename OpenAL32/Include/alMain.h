@@ -611,10 +611,10 @@ enum DevFmtChannels {
     DevFmtBFormat3D,
 
     DevFmtChannelsDefault = DevFmtStereo,
-    DevFmtRME22  = ALC_RME22_SOFT
+    DevFmtXRME22  = ALC_XRME22_SOFT
 };
 
-// MAX_OUTPUT_CHANNELS was (8) in v1.6.1. Change to 22 for RME22
+// MAX_OUTPUT_CHANNELS was (8) in v1.6.1. Change to 22 for XRME22
 #define MAX_OUTPUT_CHANNELS  (22)
 
 ALuint BytesFromDevFmt(enum DevFmtType type) DECL_CONST;

@@ -657,9 +657,9 @@ static void ALCpulsePlayback_sinkInfoCallback(pa_context *UNUSED(context), const
         enum DevFmtChannels chans;
     } chanmaps[] = {
 	{ "front-left,front-right,front-center,lfe,rear-left,rear-right,side-left,side-right,aux0,aux1,aux2,aux3,aux4,aux5,aux6,aux7,aux8,aux9,aux10,aux11,aux12,aux13",
-          DevFmtRME22 },
+          DevFmtXRME22 },
 	// { "aux0,aux1,aux2,aux3,aux4,aux5,aux6,aux7,aux8,aux9,aux10,aux11,aux12,aux13,front-left,front-right,front-center,lfe,rear-left,rear-right,side-left,side-right",
-          // DevFmtRME22 },
+          // DevFmtXRME22 },
         { "front-left,front-right,front-center,lfe,rear-left,rear-right,side-left,side-right",
           DevFmtX71 },
         { "front-left,front-right,front-center,lfe,rear-center,side-left,side-right",
@@ -1026,7 +1026,7 @@ static ALCboolean ALCpulsePlayback_reset(ALCpulsePlayback *self)
         case DevFmtX71:
             mapname = "front-left,front-right,front-center,lfe,rear-left,rear-right,side-left,side-right";
             break;
-        case DevFmtRME22:
+        case DevFmtXRME22:
             mapname  = "front-left,front-right,front-center,lfe,rear-left,rear-right,side-left,side-right,aux0,aux1,aux2,aux3,aux4,aux5,aux6,aux7,aux8,aux9,aux10,aux11,aux12,aux13";
             break;
     }
