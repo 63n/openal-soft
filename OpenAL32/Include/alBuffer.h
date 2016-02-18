@@ -32,6 +32,7 @@ enum UserFmtChannels {
     UserFmtX51    = AL_5POINT1_SOFT, /* (WFX order) */
     UserFmtX61    = AL_6POINT1_SOFT, /* (WFX order) */
     UserFmtX71    = AL_7POINT1_SOFT, /* (WFX order) */
+    UserFmtRME22  = AL_RME22_SOFT,   /* (WFX order) */
     UserFmtBFormat2D = 0x10000000, /* WXY */
     UserFmtBFormat3D, /* WXYZ */
 };
@@ -58,10 +59,13 @@ enum FmtChannels {
     FmtX51    = UserFmtX51,
     FmtX61    = UserFmtX61,
     FmtX71    = UserFmtX71,
+    FmtRME22  = UserFmtRME22,
     FmtBFormat2D = UserFmtBFormat2D,
     FmtBFormat3D = UserFmtBFormat3D,
 };
-#define MAX_INPUT_CHANNELS  (8)
+
+// MAX_INPUT_CHANNELS was (8)
+#define MAX_INPUT_CHANNELS  (22)
 
 ALuint BytesFromFmt(enum FmtType type) DECL_CONST;
 ALuint ChannelsFromFmt(enum FmtChannels chans) DECL_CONST;

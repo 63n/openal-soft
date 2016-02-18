@@ -404,7 +404,22 @@ static ALCboolean ALCjackPlayback_reset(ALCjackPlayback *self)
     /* Force 32-bit float output. */
     device->FmtType = DevFmtFloat;
 
+
+// what if we don't force float, but short
+// printf("Alc/backends/jack. force Shorts instead\n");
+// device->FmtType = DevFmtShort;
+//
+// AGH. looks like Jack must be 32-bit float.
+// http://jackaudio.org/files/docs/html/types_8h.html#acbcada380e9dfdd5bff1296e7156f478
+// 	#define JACK_DEFAULT_AUDIO_TYPE   "32 bit float mono audio"
+
+
     numchans = ChannelsFromDevFmt(device->FmtChans);
+
+printf("Alc/backends/jack. numchans=%d\n", numchans);
+printf("Alc/backends/jack. change it to 22!\n");
+numchans = 22;
+
     for(i = 0;i < numchans;i++)
     {
         char name[64];

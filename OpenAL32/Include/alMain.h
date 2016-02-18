@@ -512,16 +512,50 @@ enum Resampler {
     ResamplerMax,
 };
 
+/*
+ * Heads up.
+ * The Channel enums below are sometimes selected with channel masks,
+ * so their order matters! eg. see in Alc/backends/wave.c:279
+ *
+ * ie. DevFmtMono   is "0x4"     (binary 0100, so FrontCenter)
+ * ie. DevFmtStereo is "0x1|0x2" (binary 0011, so FrontLeft and FrontRight)
+ *
+ * This is risky, as you should never expect enums to be in any order.
+ * if the new enums 's1,s2,s3,' etc were inserted at the top,
+ * channel-masking would break.
+ */
+
+// Hex codes for enum positions
+//
+//   FrontLeft		0x001		Aux0	0x20000
+//   FrontRight		0x002		Aux1	0x40000
+//   FrontCenter	0x004		Aux2	0x80000
+//   LFE		0x008		Aux3	0x100000
+//   BackLeft		0x010		Aux4	0x200000
+//   BackRight		0x020		Aux5	0x400000
+//   BackCenter		0x040		Aux6	0x800000
+//   SideLeft		0x080		Aux7	0x1000000
+//   SideRight		0x100		Aux8	0x2000000
+//	                	        Aux9	0x4000000
+//   TopFrontLeft	0x200		Aux10	0x8000000
+//   TopFrontRight	0x400		Aux11	0x10000000
+//   TopBackLeft	0x800		Aux12	0x20000000
+//   TopBackRight	0x1000		Aux13	0x40000000
+//   BottomFrontLeft	0x2000		
+//   BottomFrontRight	0x4000		InvalidChannel
+//   BottomBackLeft	0x8000		
+//   BottomBackRight	0x10000		
+//
 enum Channel {
     FrontLeft = 0,
-    FrontRight,
+    FrontRight,	
     FrontCenter,
-    LFE,
-    BackLeft,
-    BackRight,
-    BackCenter,
-    SideLeft,
-    SideRight,
+    LFE,	
+    BackLeft,	
+    BackRight,	
+    BackCenter,	
+    SideLeft,	
+    SideRight,	
 
     TopFrontLeft,
     TopFrontRight,
@@ -532,10 +566,20 @@ enum Channel {
     BottomBackLeft,
     BottomBackRight,
 
-    Aux0,
-    Aux1,
-    Aux2,
-    Aux3,
+    Aux0,	
+    Aux1,	
+    Aux2,	
+    Aux3,	
+    Aux4,	
+    Aux5,	
+    Aux6,	
+    Aux7,	
+    Aux8,	
+    Aux9,	
+    Aux10,	
+    Aux11,	
+    Aux12,	
+    Aux13,	
 
     InvalidChannel
 };
@@ -566,9 +610,12 @@ enum DevFmtChannels {
 
     DevFmtBFormat3D,
 
-    DevFmtChannelsDefault = DevFmtStereo
+    DevFmtChannelsDefault = DevFmtStereo,
+    DevFmtRME22  = ALC_RME22_SOFT
 };
-#define MAX_OUTPUT_CHANNELS  (8)
+
+// MAX_OUTPUT_CHANNELS was (8) in v1.6.1. Change to 22 for RME22
+#define MAX_OUTPUT_CHANNELS  (22)
 
 ALuint BytesFromDevFmt(enum DevFmtType type) DECL_CONST;
 ALuint ChannelsFromDevFmt(enum DevFmtChannels chans) DECL_CONST;

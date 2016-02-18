@@ -277,6 +277,33 @@ static ALCboolean ALCwaveBackend_reset(ALCwaveBackend *self)
         case DevFmtX51Rear: chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x010 | 0x020; break;
         case DevFmtX61: chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x100 | 0x200 | 0x400; break;
         case DevFmtX71: chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x010 | 0x020 | 0x200 | 0x400; break;
+
+	// 
+	// WAV channel masks defined here:
+	// https://msdn.microsoft.com/en-us/library/windows/hardware/ff538802%28v=vs.85%29.aspx
+	// We want to enable channels 1-16 (being 0x1 to 0x8000)
+	// It seems wav only defined/knows about 18 channels
+	//
+	// To test if this is working we could try to set the mask to 0?
+	// [ben 22Apr15]
+	//
+	// 16 channel mask
+#if 1
+        case DevFmtRME22: chanmask = 0x1 | 0x2 | 0x4 | 0x8 
+		| 0x10   | 0x20   | 0x40   | 0x080 
+		| 0x100  | 0x200  | 0x400  | 0x800  
+		| 0x1000 | 0x2000 | 0x4000 | 0x8000 ; break;
+#else
+
+	// 22 channel mask
+        case DevFmtRME22: chanmask = 0x1 | 0x2 | 0x4 | 0x8 
+		| 0x10    | 0x20    | 0x40    | 0x080 
+		| 0x100   | 0x200   | 0x400   | 0x800  
+		| 0x1000  | 0x2000  | 0x4000  | 0x8000
+		| 0x10000 | 0x20000 | 0x40000 | 0x80000
+		| 0x100000| 0x200000 ; break;
+#endif
+
         case DevFmtBFormat3D:
             isbformat = 1;
             chanmask = 0;

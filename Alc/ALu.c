@@ -337,6 +337,29 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
         { BackRight,   DEG2RAD( 150.0f), DEG2RAD(0.0f) },
         { SideLeft,    DEG2RAD( -90.0f), DEG2RAD(0.0f) },
         { SideRight,   DEG2RAD(  90.0f), DEG2RAD(0.0f) }
+    }, RME22Map[22] = {
+        { FrontLeft,   0.0f, 0.0f },
+        { FrontRight,  0.0f, 0.0f },
+        { FrontCenter, 0.0f, 0.0f },
+        { LFE, 0.0f, 0.0f },
+        { BackLeft,    0.0f, 0.0f },
+        { BackRight,   0.0f, 0.0f },
+        { SideLeft,    0.0f, 0.0f },
+        { SideRight,   0.0f, 0.0f },
+	{ Aux0,	0.0f, 0.0f },
+	{ Aux1, 0.0f, 0.0f },
+	{ Aux2, 0.0f, 0.0f },
+	{ Aux3, 0.0f, 0.0f },
+	{ Aux4, 0.0f, 0.0f },
+	{ Aux5, 0.0f, 0.0f },
+	{ Aux6, 0.0f, 0.0f },
+	{ Aux7, 0.0f, 0.0f },
+	{ Aux8, 0.0f, 0.0f },
+	{ Aux9, 0.0f, 0.0f },
+	{ Aux10, 0.0f, 0.0f },
+	{ Aux11, 0.0f, 0.0f },
+	{ Aux12, 0.0f, 0.0f },
+	{ Aux13, 0.0f, 0.0f }
     };
 
     ALCdevice *Device = ALContext->Device;
@@ -462,6 +485,11 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
     case FmtX71:
         chans = X71Map;
         num_channels = 8;
+        break;
+
+    case FmtRME22:
+        chans = RME22Map;
+        num_channels = 22;
         break;
 
     case FmtBFormat2D:

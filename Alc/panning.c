@@ -134,10 +134,20 @@ DECL_CONST static inline const char *GetLabelFromChannel(enum Channel channel)
         case BottomBackLeft: return "bottom-back-left";
         case BottomBackRight: return "bottom-back-right";
 
-        case Aux0: return "aux-0";
-        case Aux1: return "aux-1";
-        case Aux2: return "aux-2";
-        case Aux3: return "aux-3";
+        case Aux0:  return "aux0";
+        case Aux1:  return "aux1";
+        case Aux2:  return "aux2";
+        case Aux3:  return "aux3";
+        case Aux4:  return "aux4";
+        case Aux5:  return "aux5";
+        case Aux6:  return "aux6";
+        case Aux7:  return "aux7";
+        case Aux8:  return "aux8";
+        case Aux9:  return "aux9";
+        case Aux10: return "aux10";
+        case Aux11: return "aux11";
+        case Aux12: return "aux12";
+        case Aux13: return "aux13";
 
         case InvalidChannel: break;
     }
@@ -202,6 +212,12 @@ static bool LoadChannelSetup(ALCdevice *device)
         FrontLeft, FrontRight, FrontCenter,
         BackLeft, BackRight,
         SideLeft, SideRight
+    }, rme22_chans[21] = {  
+        FrontLeft, FrontRight, FrontCenter,
+        BackLeft, BackRight,
+        SideLeft, SideRight,
+	Aux0,Aux1,Aux2,Aux3,Aux4,Aux5,Aux6,
+	Aux7,Aux8,Aux9,Aux10,Aux11,Aux12,Aux13
     };
     ChannelMap chanmap[MAX_OUTPUT_CHANNELS];
     const enum Channel *channels = NULL;
@@ -245,6 +261,11 @@ static bool LoadChannelSetup(ALCdevice *device)
             layout = "surround71";
             channels = surround71_chans;
             count = COUNTOF(surround71_chans);
+            break;
+        case DevFmtRME22:
+            layout = "RME22";
+            channels = rme22_chans;
+            count = COUNTOF(rme22_chans);
             break;
         case DevFmtBFormat3D:
             break;
@@ -344,9 +365,33 @@ ALvoid aluInitPanning(ALCdevice *device)
         { Aux1, { { 0.0f, 1.0f, 0.0f, 0.0f }, { 0.0f, 1.0f, 0.0f, 0.0f } } },
         { Aux2, { { 0.0f, 0.0f, 1.0f, 0.0f }, { 0.0f, 0.0f, 1.0f, 0.0f } } },
         { Aux3, { { 0.0f, 0.0f, 0.0f, 1.0f }, { 0.0f, 0.0f, 0.0f, 1.0f } } },
+
+	}, RME22Cfg[21] = { // FIX this later. See: https://github.com/kcat/openal-soft/commit/4d36ef65b2ec1cd3122bf9ee615df452f003d014
+        { FrontLeft,   { { 0.167065f,  0.200583f,  0.172695f, 0.0f, 0.0f, 0.0f, 0.0f,  0.029855f,  0.186407f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -0.039241f,  0.068910f }, { 0.167065f,  0.153519f,  0.132175f, 0.0f } } },
+        { FrontRight,  { { 0.167065f,  0.200583f, -0.172695f, 0.0f, 0.0f, 0.0f, 0.0f,  0.029855f, -0.186407f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -0.039241f, -0.068910f }, { 0.167065f,  0.153519f, -0.132175f, 0.0f } } },
+        { FrontCenter, { { 0.109403f,  0.179490f,  0.000000f, 0.0f, 0.0f, 0.0f, 0.0f,  0.142031f,  0.000000f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,  0.072024f,  0.000000f }, { 0.109403f,  0.137375f,  0.000000f, 0.0f } } },
+        { BackLeft,    { { 0.224752f, -0.295009f,  0.170325f, 0.0f, 0.0f, 0.0f, 0.0f,  0.105349f, -0.182473f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,  0.000000f,  0.065799f }, { 0.224752f, -0.225790f,  0.130361f, 0.0f } } },
+        { BackRight,   { { 0.224752f, -0.295009f, -0.170325f, 0.0f, 0.0f, 0.0f, 0.0f,  0.105349f,  0.182473f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,  0.000000f, -0.065799f }, { 0.224752f, -0.225790f, -0.130361f, 0.0f } } },
+        { SideLeft,    { { 0.224739f,  0.000000f,  0.340644f, 0.0f, 0.0f, 0.0f, 0.0f, -0.210697f,  0.000000f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,  0.000000f, -0.065795f }, { 0.224739f,  0.000000f,  0.260717f, 0.0f } } },
+        { SideRight,   { { 0.224739f,  0.000000f, -0.340644f, 0.0f, 0.0f, 0.0f, 0.0f, -0.210697f,  0.000000f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,  0.000000f,  0.065795f }, { 0.224739f,  0.000000f, -0.260717f, 0.0f } } },
+        { Aux0, { { 1.4142f }, { 1.4142f } } }, // Fix these. Mono for now.
+        { Aux1, { { 1.4142f }, { 1.4142f } } },
+        { Aux2, { { 1.4142f }, { 1.4142f } } },
+        { Aux3, { { 1.4142f }, { 1.4142f } } },
+        { Aux4, { { 1.4142f }, { 1.4142f } } },
+        { Aux5, { { 1.4142f }, { 1.4142f } } },
+        { Aux6, { { 1.4142f }, { 1.4142f } } },
+        { Aux7, { { 1.4142f }, { 1.4142f } } },
+        { Aux8, { { 1.4142f }, { 1.4142f } } },
+        { Aux9, { { 1.4142f }, { 1.4142f } } },
+        { Aux10, { { 1.4142f }, { 1.4142f } } },
+        { Aux11, { { 1.4142f }, { 1.4142f } } },
+        { Aux12, { { 1.4142f }, { 1.4142f } } },
+        { Aux13, { { 1.4142f }, { 1.4142f } } },
     };
     const ChannelMap *chanmap = NULL;
     size_t count = 0;
+
 
     memset(device->Channel, 0, sizeof(device->Channel));
     device->NumChannels = 0;
@@ -417,6 +462,11 @@ ALvoid aluInitPanning(ALCdevice *device)
         case DevFmtX71:
             count = COUNTOF(X71Cfg);
             chanmap = X71Cfg;
+            break;
+
+        case DevFmtRME22:
+            count = COUNTOF(RME22Cfg);
+            chanmap = RME22Cfg;
             break;
 
         case DevFmtBFormat3D:

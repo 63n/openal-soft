@@ -391,6 +391,7 @@ static ALCboolean pulse_open(pa_threaded_mainloop **loop, pa_context **context,
     {
         pa_threaded_mainloop_unlock(*loop);
         pa_threaded_mainloop_stop(*loop);
+		ERR("b. pa_threaded_mainloop_start() could not connect to context\n");
         goto error;
     }
     pa_context_set_state_callback(*context, state_cb, ptr);
@@ -561,12 +562,25 @@ static void ALCpulsePlayback_probeDevices(void)
             pa_sample_spec spec;
             pa_stream *stream;
 
-            flags = PA_STREAM_FIX_FORMAT | PA_STREAM_FIX_RATE |
-                    PA_STREAM_FIX_CHANNELS | PA_STREAM_DONT_MOVE;
+            flags = PA_STREAM_FIX_FORMAT | PA_STREAM_FIX_RATE | PA_STREAM_FIX_CHANNELS | PA_STREAM_DONT_MOVE;
+            // flags = PA_STREAM_DONT_MOVE;
+
+
+// HACK - try this format.  Thu Apr  9 19:19:28 AEST 2015
 
             spec.format = PA_SAMPLE_S16NE;
             spec.rate = 44100;
             spec.channels = 2;
+
+            // spec.format = PA_SAMPLE_FLOAT32NE;
+            // spec.format = PA_SAMPLE_S32LE;
+            // spec.format = PA_SAMPLE_S16LE;
+            // spec.rate = 44100;
+            // spec.channels = 22;
+            // spec.channels = 1;
+
+// check that we ever see this!? [ben 20Apr15]
+printf("\nProbe Devices\n");
 
             stream = ALCpulsePlayback_connectStream(NULL, loop, context, flags,
                                                     NULL, &spec, NULL);
@@ -587,6 +601,9 @@ static void ALCpulsePlayback_probeDevices(void)
             pa_context_disconnect(context);
             pa_context_unref(context);
         }
+		else
+			TRACE("b. ALCpulsePlayback_probeDevices() did not have a context\n");
+
         pa_threaded_mainloop_unlock(loop);
         pa_threaded_mainloop_stop(loop);
     }
@@ -639,6 +656,10 @@ static void ALCpulsePlayback_sinkInfoCallback(pa_context *UNUSED(context), const
         const char *str;
         enum DevFmtChannels chans;
     } chanmaps[] = {
+	{ "front-left,front-right,front-center,lfe,rear-left,rear-right,side-left,side-right,aux0,aux1,aux2,aux3,aux4,aux5,aux6,aux7,aux8,aux9,aux10,aux11,aux12,aux13",
+          DevFmtRME22 },
+	// { "aux0,aux1,aux2,aux3,aux4,aux5,aux6,aux7,aux8,aux9,aux10,aux11,aux12,aux13,front-left,front-right,front-center,lfe,rear-left,rear-right,side-left,side-right",
+          // DevFmtRME22 },
         { "front-left,front-right,front-center,lfe,rear-left,rear-right,side-left,side-right",
           DevFmtX71 },
         { "front-left,front-right,front-center,lfe,rear-center,side-left,side-right",
@@ -657,19 +678,30 @@ static void ALCpulsePlayback_sinkInfoCallback(pa_context *UNUSED(context), const
     if(eol)
     {
         pa_threaded_mainloop_signal(self->loop, 0);
+		TRACE("b. ALCpulsePlayback_sinkInfoCallback(): eol\n");
         return;
     }
 
-    for(i = 0;chanmaps[i].str;i++)
+    for(i = 0; chanmaps[i].str; i++)
     {
         pa_channel_map map;
+		TRACE("   Parse Map: %s\n", chanmaps[i].str);
         if(!pa_channel_map_parse(&map, chanmaps[i].str))
+	{
+            // ERR("\n\nAHA. pa_channel_map did not parse: %s  -- error: %s\n\n", chanmaps[i].str, pa_strerror(pa_context_errno(context)));
+            ERR("\n\nAHA. pa_channel_map did not parse: %s\n\n", chanmaps[i].str);
+            printf("\nAHA. pa_channel_map did not parse: %s\n\n", chanmaps[i].str);
             continue;
+	}
 
+		TRACE("Superset Map: %s\n", chanmaps[i].str);
         if(pa_channel_map_superset(&info->channel_map, &map))
         {
             if(!(device->Flags&DEVICE_CHANNELS_REQUEST))
+            {
                 device->FmtChans = chanmaps[i].chans;
+                printf("\ndevice->FmtChans is %s\n\n", chanmaps[i].str);
+            }
             break;
         }
     }
@@ -720,6 +752,8 @@ static pa_stream *ALCpulsePlayback_connectStream(const char *device_name,
 {
     pa_stream_state_t state;
     pa_stream *stream;
+
+// printf("\n\nCONNECT %s %s %s\n\n", spec, chanmap, prop_filter);
 
     stream = pa_stream_new_with_proplist(context, "Playback Stream", spec, chanmap, prop_filter);
     if(!stream)
@@ -841,14 +875,28 @@ static ALCenum ALCpulsePlayback_open(ALCpulsePlayback *self, const ALCchar *name
 
     pa_threaded_mainloop_lock(self->loop);
 
-    flags = PA_STREAM_FIX_FORMAT | PA_STREAM_FIX_RATE |
-            PA_STREAM_FIX_CHANNELS;
+    flags = PA_STREAM_FIX_FORMAT | PA_STREAM_FIX_RATE | PA_STREAM_FIX_CHANNELS;  // orig
+    // flags = 0;  // hack
+
     if(!GetConfigValueBool("pulse", "allow-moves", 0))
         flags |= PA_STREAM_DONT_MOVE;
+
+
+// HACK - try this format.  Thu Apr  9 19:19:28 AEST 2015
 
     spec.format = PA_SAMPLE_S16NE;
     spec.rate = 44100;
     spec.channels = 2;
+
+    // spec.format = PA_SAMPLE_FLOAT32NE;
+    // spec.format = PA_SAMPLE_S32LE;
+    // spec.format = PA_SAMPLE_S16LE;
+    // spec.rate = 44100;
+    // spec.channels = 22;
+    // spec.channels = 1;
+
+printf("\nConnect to Device\n");
+
 
     TRACE("Connecting to \"%s\"\n", pulse_name ? pulse_name : "(default)");
     self->stream = ALCpulsePlayback_connectStream(pulse_name, self->loop, self->context,
@@ -977,6 +1025,9 @@ static ALCboolean ALCpulsePlayback_reset(ALCpulsePlayback *self)
             break;
         case DevFmtX71:
             mapname = "front-left,front-right,front-center,lfe,rear-left,rear-right,side-left,side-right";
+            break;
+        case DevFmtRME22:
+            mapname  = "front-left,front-right,front-center,lfe,rear-left,rear-right,side-left,side-right,aux0,aux1,aux2,aux3,aux4,aux5,aux6,aux7,aux8,aux9,aux10,aux11,aux12,aux13";
             break;
     }
     if(!pa_channel_map_parse(&chanmap, mapname))
@@ -1223,6 +1274,7 @@ static void ALCpulseCapture_probeDevices(void)
             spec.format = PA_SAMPLE_S16NE;
             spec.rate = 44100;
             spec.channels = 1;
+            // spec.channels = 22;
 
             stream = ALCpulseCapture_connectStream(NULL, loop, context, flags,
                                                    NULL, &spec, NULL);

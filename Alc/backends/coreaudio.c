@@ -266,6 +266,12 @@ static ALCboolean ca_reset_playback(ALCdevice *device)
         case 8:
             device->FmtChans = DevFmtX71;
             break;
+        case 16:
+            device->FmtChans = DevFmtRME22;  // we only use 16 of 22 channels (uhoh FIXME)
+            break;
+        case 22:
+            device->FmtChans = DevFmtRME22;  // we only use 16 of 22 channels (uhoh FIXME)
+            break;
         default:
             ERR("Unhandled channel count (%d), using Stereo\n", streamFormat.mChannelsPerFrame);
             device->FmtChans = DevFmtStereo;
@@ -522,6 +528,7 @@ static ALCenum ca_open_capture(ALCdevice *device, const ALCchar *deviceName)
         case DevFmtX51Rear:
         case DevFmtX61:
         case DevFmtX71:
+        case DevFmtRME22:
         case DevFmtBFormat3D:
             ERR("%s not supported\n", DevFmtChannelsString(device->FmtChans));
             goto error;

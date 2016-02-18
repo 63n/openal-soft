@@ -839,6 +839,10 @@ static HRESULT ALCmmdevPlayback_resetProxy(ALCmmdevPlayback *self)
             device->FmtChans = DevFmtX61;
         else if(OutputType.Format.nChannels == 8 && (OutputType.dwChannelMask == X7DOT1 || OutputType.dwChannelMask == X7DOT1_WIDE))
             device->FmtChans = DevFmtX71;
+        else if(OutputType.Format.nChannels == 16 && OutputType.dwChannelMask == RME22)
+            device->FmtChans = DevFmtRME22;
+        else if(OutputType.Format.nChannels == 22 && OutputType.dwChannelMask == RME22)
+            device->FmtChans = DevFmtRME22;
         else
             ERR("Unhandled channel config: %d -- 0x%08lx\n", OutputType.Format.nChannels, OutputType.dwChannelMask);
     }
@@ -875,6 +879,11 @@ static HRESULT ALCmmdevPlayback_resetProxy(ALCmmdevPlayback *self)
         case DevFmtX71:
             OutputType.Format.nChannels = 8;
             OutputType.dwChannelMask = X7DOT1;
+            break;
+        case DevFmtRME22:
+            // OutputType.Format.nChannels = 16;
+            OutputType.Format.nChannels = 22;
+            OutputType.dwChannelMask = RME22;
             break;
     }
     switch(device->FmtType)
@@ -953,6 +962,10 @@ static HRESULT ALCmmdevPlayback_resetProxy(ALCmmdevPlayback *self)
             device->FmtChans = DevFmtX61;
         else if(OutputType.Format.nChannels == 8 && (OutputType.dwChannelMask == X7DOT1 || OutputType.dwChannelMask == X7DOT1_WIDE))
             device->FmtChans = DevFmtX71;
+        else if(OutputType.Format.nChannels == 16 && OutputType.dwChannelMask == RME22)
+            device->FmtChans = DevFmtRME22;
+        else if(OutputType.Format.nChannels == 22 && OutputType.dwChannelMask == RME22)
+            device->FmtChans = DevFmtRME22;
         else
         {
             ERR("Unhandled extensible channels: %d -- 0x%08lx\n", OutputType.Format.nChannels, OutputType.dwChannelMask);
@@ -1477,6 +1490,11 @@ static HRESULT ALCmmdevCapture_resetProxy(ALCmmdevCapture *self)
         case DevFmtX71:
             OutputType.Format.nChannels = 8;
             OutputType.dwChannelMask = X7DOT1;
+            break;
+        case DevFmtRME22:
+            // OutputType.Format.nChannels = 16;
+            OutputType.Format.nChannels = 22;
+            OutputType.dwChannelMask = RME22;
             break;
 
         case DevFmtBFormat3D:

@@ -520,6 +520,12 @@ static ALCboolean qsa_reset_playback(ALCdevice* device)
         case 8:
              device->FmtChans=DevFmtX71;
              break;
+        case 16:
+             device->FmtChans=DevFmtRME22;
+             break;
+        case 22:
+             device->FmtChans=DevFmtRME22;
+             break;
         default:
              device->FmtChans=DevFmtMono;
              break;
