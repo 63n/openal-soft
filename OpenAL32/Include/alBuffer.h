@@ -32,8 +32,8 @@ enum UserFmtChannels {
     UserFmtX51    = AL_5POINT1_SOFT, /* (WFX order) */
     UserFmtX61    = AL_6POINT1_SOFT, /* (WFX order) */
     UserFmtX71    = AL_7POINT1_SOFT, /* (WFX order) */
-    UserFmtXRME22  = AL_XRME22_SOFT,   /* (WFX order) */
-    UserFmtBFormat2D = 0x10000000, /* WXY */
+    UserFmtXRME22  = AL_RME22_SOFT,   /* (WFX order) */
+    UserFmtBFormat2D = 0x10000000, /* WXY */		// FixMe? unnecessary max value? [ben 18Feb16]
     UserFmtBFormat3D, /* WXYZ */
 };
 

@@ -58,11 +58,17 @@ typedef int ALint;
 /** unsigned 32-bit integer */
 typedef unsigned int ALuint;
 
+/** unsigned 64-bit integer */
+typedef unsigned long ALulong;
+
 /** non-negative 32-bit binary integer size */
 typedef int ALsizei;
 
 /** enumerated 32-bit value */
 typedef int ALenum;
+
+/** enumerated 64-bit value */
+typedef long ALenum64;
 
 /** 32-bit IEEE754 floating-point */
 typedef float ALfloat;

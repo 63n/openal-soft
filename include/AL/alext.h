@@ -112,9 +112,9 @@ extern "C" {
 #define AL_FORMAT_71CHN8                         0x1210
 #define AL_FORMAT_71CHN16                        0x1211
 #define AL_FORMAT_71CHN32                        0x1212
-#define AL_FORMAT_XRME22CHN8                      0x1213
-#define AL_FORMAT_XRME22CHN16                     0x1214
-#define AL_FORMAT_XRME22CHN32                     0x1215
+#define AL_FORMAT_RME22CHN8                      0x1213
+#define AL_FORMAT_RME22CHN16                     0x1214
+#define AL_FORMAT_RME22CHN32                     0x1215
 #endif
 
 #ifndef AL_EXT_MULAW_MCFORMATS
@@ -126,7 +126,7 @@ extern "C" {
 #define AL_FORMAT_51CHN_MULAW                    0x10023
 #define AL_FORMAT_61CHN_MULAW                    0x10024
 #define AL_FORMAT_71CHN_MULAW                    0x10025
-#define AL_FORMAT_XRME22CHN_MULAW                 0x10026
+#define AL_FORMAT_RME22CHN_MULAW                 0x10026
 #endif
 
 #ifndef AL_EXT_IMA4
@@ -217,7 +217,7 @@ AL_API void AL_APIENTRY alRequestFoldbackStop(void);
 #define AL_5POINT1_SOFT                          0x1504
 #define AL_6POINT1_SOFT                          0x1505
 #define AL_7POINT1_SOFT                          0x1506
-#define AL_XRME22_SOFT                            0x1507
+#define AL_RME22_SOFT                            0x1507
 
 /* Sample types */
 #define AL_BYTE_SOFT                             0x1400
@@ -253,9 +253,9 @@ AL_API void AL_APIENTRY alRequestFoldbackStop(void);
 #define AL_7POINT1_8_SOFT                        0x1210
 #define AL_7POINT1_16_SOFT                       0x1211
 #define AL_7POINT1_32F_SOFT                      0x1212
-#define AL_XRME22_8_SOFT                          0x1213
-#define AL_XRME22_16_SOFT                         0x1214
-#define AL_XRME22_32F_SOFT                        0x1215
+#define AL_RME22_8_SOFT                          0x1213
+#define AL_RME22_16_SOFT                         0x1214
+#define AL_RME22_32F_SOFT                        0x1215
 
 /* Buffer attributes */
 #define AL_INTERNAL_FORMAT_SOFT                  0x2008
@@ -301,7 +301,7 @@ AL_API ALboolean AL_APIENTRY alIsBufferFormatSupportedSOFT(ALenum format);
 #define ALC_5POINT1_SOFT                         0x1504
 #define ALC_6POINT1_SOFT                         0x1505
 #define ALC_7POINT1_SOFT                         0x1506
-#define ALC_XRME22_SOFT                           0x1507
+#define ALC_RME22_SOFT                           0x1507
 
 typedef ALCdevice* (ALC_APIENTRY*LPALCLOOPBACKOPENDEVICESOFT)(const ALCchar*);
 typedef ALCboolean (ALC_APIENTRY*LPALCISRENDERFORMATSUPPORTEDSOFT)(ALCdevice*,ALCsizei,ALCenum,ALCenum);

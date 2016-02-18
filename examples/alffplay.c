@@ -38,9 +38,9 @@ static LPALGETSOURCEDVSOFT alGetSourcedvSOFT;
 
 #define AUDIO_BUFFER_TIME 100 /* In milliseconds, per-buffer */
 // #define AUDIO_BUFFER_QUEUE_SIZE 8 /* Number of buffers to queue */
-#define AUDIO_BUFFER_QUEUE_SIZE 22 /* Guessing for XRME22. Number of buffers to queue */
+#define AUDIO_BUFFER_QUEUE_SIZE 22 /* Guessing for RME22. Number of buffers to queue */
 // #define MAX_AUDIOQ_SIZE (5 * 16 * 1024) /* Bytes of compressed audio data to keep queued */
-#define MAX_AUDIOQ_SIZE (5 * 44 * 1024) /* Guessing for XRME22. Bytes of compressed audio data to keep queued */
+#define MAX_AUDIOQ_SIZE (5 * 44 * 1024) /* Guessing for RME22. Bytes of compressed audio data to keep queued */
 #define MAX_VIDEOQ_SIZE (5 * 256 * 1024) /* Bytes of compressed video data to keep queued */
 #define AV_SYNC_THRESHOLD 0.01
 #define AV_NOSYNC_THRESHOLD 10.0
@@ -567,9 +567,9 @@ static int audio_thread(void *userdata)
     {
         movState->audio.dst_sample_fmt = AV_SAMPLE_FMT_U8;
         movState->audio.frame_size = 1;
-        if(movState->audio.st->codec->channel_layout == AV_CH_LAYOUT_XRME22 &&
+        if(movState->audio.st->codec->channel_layout == AV_CH_LAYOUT_RME22 &&
            alIsExtensionPresent("AL_EXT_MCFORMATS") &&
-           (fmt=alGetEnumValue("AL_FORMAT_XRME22CHN8")) != AL_NONE && fmt != -1)
+           (fmt=alGetEnumValue("AL_FORMAT_RME22CHN8")) != AL_NONE && fmt != -1)
         {
             movState->audio.dst_ch_layout = movState->audio.st->codec->channel_layout;
             // movState->audio.frame_size *= 16;
@@ -612,9 +612,9 @@ static int audio_thread(void *userdata)
     {
         movState->audio.dst_sample_fmt = AV_SAMPLE_FMT_FLT;
         movState->audio.frame_size = 4;
-        if(movState->audio.st->codec->channel_layout == AV_CH_LAYOUT_XRME22 &&
+        if(movState->audio.st->codec->channel_layout == AV_CH_LAYOUT_RME22 &&
            alIsExtensionPresent("AL_EXT_MCFORMATS") &&
-           (fmt=alGetEnumValue("AL_FORMAT_XRME22CHN32")) != AL_NONE && fmt != -1)
+           (fmt=alGetEnumValue("AL_FORMAT_RME22CHN32")) != AL_NONE && fmt != -1)
         {
             movState->audio.dst_ch_layout = movState->audio.st->codec->channel_layout;
             // movState->audio.frame_size *= 16;
@@ -655,9 +655,9 @@ static int audio_thread(void *userdata)
     {
         movState->audio.dst_sample_fmt = AV_SAMPLE_FMT_S16;
         movState->audio.frame_size = 2;
-        if(movState->audio.st->codec->channel_layout == AV_CH_LAYOUT_XRME22 &&
+        if(movState->audio.st->codec->channel_layout == AV_CH_LAYOUT_RME22 &&
            alIsExtensionPresent("AL_EXT_MCFORMATS") &&
-           (fmt=alGetEnumValue("AL_FORMAT_XRME22CHN16")) != AL_NONE && fmt != -1)
+           (fmt=alGetEnumValue("AL_FORMAT_RME22CHN16")) != AL_NONE && fmt != -1)
         {
             movState->audio.dst_ch_layout = movState->audio.st->codec->channel_layout;
             // movState->audio.frame_size *= 16;
