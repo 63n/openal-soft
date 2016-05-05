@@ -2000,19 +2000,19 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
 
     if(device->FmtChans != oldChans && (device->Flags&DEVICE_CHANNELS_REQUEST))
     {
-        ERR("Failed to set %s, got %s instead\n", DevFmtChannelsString(oldChans),
+        ERR("(Chan Req) Failed to set %s, got %s instead\n", DevFmtChannelsString(oldChans),
             DevFmtChannelsString(device->FmtChans));
         device->Flags &= ~DEVICE_CHANNELS_REQUEST;
     }
     if(device->FmtType != oldType && (device->Flags&DEVICE_SAMPLE_TYPE_REQUEST))
     {
-        ERR("Failed to set %s, got %s instead\n", DevFmtTypeString(oldType),
+        ERR("(Sample Req) Failed to set %s, got %s instead\n", DevFmtTypeString(oldType),
             DevFmtTypeString(device->FmtType));
         device->Flags &= ~DEVICE_SAMPLE_TYPE_REQUEST;
     }
     if(device->Frequency != oldFreq && (device->Flags&DEVICE_FREQUENCY_REQUEST))
     {
-        ERR("Failed to set %uhz, got %uhz instead\n", oldFreq, device->Frequency);
+        ERR("(Freq Req) Failed to set %uhz, got %uhz instead\n", oldFreq, device->Frequency);
         device->Flags &= ~DEVICE_FREQUENCY_REQUEST;
     }
 
@@ -2034,8 +2034,10 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
     al_string_clear(&device->Hrtf_Name);
     if(device->FmtChans != DevFmtStereo)
     {
-        if(hrtf_appreq == Hrtf_Enable)
+        if(hrtf_appreq == Hrtf_Enable) {
             device->Hrtf_Status = ALC_HRTF_UNSUPPORTED_FORMAT_SOFT;
+			WARN("** hrtf_appreq says Enable, but device status is ALC_HRTF_UNSUPPORTED_FORMAT\n");
+		}
 
         free(device->Bs2b);
         device->Bs2b = NULL;

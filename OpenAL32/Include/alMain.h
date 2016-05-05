@@ -307,53 +307,6 @@ enum DistanceModel {
 };
 
 
-/*
- * Heads up.
- * The Channel enums below are sometimes selected with channel masks,
- * so their order matters! eg. see in Alc/backends/wave.c:279
- *
- * ie. DevFmtMono   is "0x4"     (binary 0100, so FrontCenter)
- * ie. DevFmtStereo is "0x1|0x2" (binary 0011, so FrontLeft and FrontRight)
- *
- * This is risky, as you should never expect enums to be in any order.
- * The "FrontLeft = 0" certainly helps, but is no guarantee.
- * if the new enums 's1,s2,s3,' etc were inserted at the top,
- * channel-masking would break.
- */
-
-//
-// Hex codes for enum positions, used by channel masks
-//
-//   FrontLeft		0x001		|	Aux0	0x20000
-//   FrontRight		0x002		|	Aux1	0x40000
-//   FrontCenter	0x004		|	Aux2	0x80000
-//   LFE		0x008		|	Aux3	0x100000
-//   BackLeft		0x010		|	Aux4	0x200000
-//   BackRight		0x020		|	Aux5	0x400000
-//   BackCenter		0x040		|	Aux6	0x800000
-//   SideLeft		0x080		|	Aux7	0x1000000
-//   SideRight		0x100		|	Aux8	0x2000000
-//	                	        |	Aux9	0x4000000
-//   TopFrontLeft	0x200		|	Aux10	0x8000000
-//   TopFrontRight	0x400		|	Aux11	0x10000000
-//   TopBackLeft	0x800		|	Aux12	0x20000000
-//   TopBackRight	0x1000		|	Aux13	0x40000000
-//   BottomFrontLeft	0x2000		|
-//   BottomFrontRight	0x4000		|
-//   BottomBackLeft	0x8000		|
-//   BottomBackRight	0x10000		|
-//
-//   BFormatW		0x80000000
-//   BFormatX		0x100000000
-//   BFormatY		0x200000000
-//   BFormatZ		0x400000000
-//
-//   InvalidChannel     0x800000000
-//
-// Note a ALuint is only 32 bits. We now need at least 36 bits.
-// So chanmasks using these enums must use a 64bit ALulong or Alenum64.
-//
-//
 enum Channel {
     FrontLeft = 0,
     FrontRight,	
@@ -419,7 +372,7 @@ enum DevFmtChannels {
     DevFmtX71    = ALC_7POINT1_SOFT,
 
     /* Similar to 5.1, except using rear channels instead of sides */
-    DevFmtX51Rear = 0x80000000,  // FixMe - unnecessary max value imho? [ben 18Feb16]
+    DevFmtX51Rear = 0x80000000,  /* Warning: following enums will now start from 0x80000000 */
 
     DevFmtBFormat3D,
 
@@ -427,7 +380,7 @@ enum DevFmtChannels {
     DevFmtXRME22  = ALC_RME22_SOFT
 };
 
-// MAX_OUTPUT_CHANNELS was (8) in v1.17.2 - Change to 22 for RME22
+/* MAX_OUTPUT_CHANNELS was (8) in v1.17.2 - Change to 22 for RME22 */
 #define MAX_OUTPUT_CHANNELS  (22)
 
 ALuint BytesFromDevFmt(enum DevFmtType type) DECL_CONST;

@@ -460,11 +460,15 @@ const char *GetConfigValue(const char *devName, const char *blockName, const cha
     unsigned int i;
     char key[256];
 
+// printf("  GetConfigValue() has devName: %s\n", devName);
+
     if(!keyName)
         return def;
 
-    if(blockName && strcasecmp(blockName, "general") != 0)
+
+    if(blockName && strcasecmp(blockName, "general") != 0)  // if blockName is not "general"
     {
+// printf("  GetConfigValue() in general\n");
         if(devName)
             snprintf(key, sizeof(key), "%s/%s/%s", blockName, devName, keyName);
         else
@@ -483,6 +487,7 @@ const char *GetConfigValue(const char *devName, const char *blockName, const cha
 
     for(i = 0;i < cfgBlock.entryCount;i++)
     {
+// printf("    check %s = %s\n", cfgBlock.entries[i].key, key);
         if(strcmp(cfgBlock.entries[i].key, key) == 0)
         {
             TRACE("Found %s = \"%s\"\n", key, cfgBlock.entries[i].value);
@@ -508,7 +513,9 @@ int ConfigValueExists(const char *devName, const char *blockName, const char *ke
 
 int ConfigValueStr(const char *devName, const char *blockName, const char *keyName, const char **ret)
 {
+// printf("ConfigValueStr() %s | %s | %s\n", devName, blockName, keyName);
     const char *val = GetConfigValue(devName, blockName, keyName, "");
+// printf("\nConfigValueStr() returns: %s\n\n", val);
     if(!val[0]) return 0;
 
     *ret = val;

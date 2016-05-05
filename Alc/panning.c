@@ -290,7 +290,7 @@ static bool LoadChannelSetup(ALCdevice *device)
         FrontLeft, FrontRight, FrontCenter,
         BackLeft, BackRight,
         SideLeft, SideRight
-    }, rme22_chans[21] = {  
+    }, rme22_chans[22] = {  
         FrontLeft, FrontRight, FrontCenter,
         BackLeft, BackRight,
         SideLeft, SideRight,
@@ -352,8 +352,13 @@ static bool LoadChannelSetup(ALCdevice *device)
             break;
     }
 
-    if(!layout)
+// printf("\n\nAlc/panning.c has layout: %s\n\n", layout);
+
+
+    if(!layout) {
+	TRACE("** Uh oh -- Alc/panning.c failed to interpret layout\n");
         return false;
+    }
     else
     {
         char name[32] = {0};
@@ -361,8 +366,12 @@ static bool LoadChannelSetup(ALCdevice *device)
         char eol;
 
         snprintf(name, sizeof(name), "%s/type", layout);
+printf("\n\nAlc/panning.c calling ConfigValueStr with layouts\n");
+printf("\n\nAlc/panning.c devname is %s\n", al_string_get_cstr(device->DeviceName));
+        // if(!ConfigValueStr(al_string_get_cstr(device->DeviceName), "layout", name, &type))
         if(!ConfigValueStr(al_string_get_cstr(device->DeviceName), "layouts", name, &type))
             return false;
+printf("\n\nAlc/panning.c returned from ConfigValueStr with layouts\n");
 
         if(sscanf(type, " %31[^: ] : %d%c", name, &order, &eol) != 2)
         {
@@ -506,30 +515,64 @@ ALvoid aluInitPanning(ALCdevice *device)
         { BFormatX, { 0.0f, 1.0f, 0.0f, 0.0f } },
         { BFormatY, { 0.0f, 0.0f, 1.0f, 0.0f } },
         { BFormatZ, { 0.0f, 0.0f, 0.0f, 1.0f } },
-    }, XRME22Cfg[21] = { // FIX this later. See: https://github.com/kcat/openal-soft/commit/4d36ef65b2ec1cd3122bf9ee615df452f003d014
-        { FrontLeft,   { 0.167065f,  0.200583f,  0.172695f, 0.0f, 0.0f, 0.0f, 0.0f,  0.029855f,  0.186407f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -0.039241f,  0.068910f } },
-        { FrontRight,  { 0.167065f,  0.200583f, -0.172695f, 0.0f, 0.0f, 0.0f, 0.0f,  0.029855f, -0.186407f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, -0.039241f, -0.068910f } },
-        { FrontCenter, { 0.109403f,  0.179490f,  0.000000f, 0.0f, 0.0f, 0.0f, 0.0f,  0.142031f,  0.000000f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,  0.072024f,  0.000000f } },
-        { BackLeft,    { 0.224752f, -0.295009f,  0.170325f, 0.0f, 0.0f, 0.0f, 0.0f,  0.105349f, -0.182473f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,  0.000000f,  0.065799f } },
-        { BackRight,   { 0.224752f, -0.295009f, -0.170325f, 0.0f, 0.0f, 0.0f, 0.0f,  0.105349f,  0.182473f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,  0.000000f, -0.065799f } },
-        { SideLeft,    { 0.224739f,  0.000000f,  0.340644f, 0.0f, 0.0f, 0.0f, 0.0f, -0.210697f,  0.000000f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,  0.000000f, -0.065795f } },
-        { SideRight,   { 0.224739f,  0.000000f, -0.340644f, 0.0f, 0.0f, 0.0f, 0.0f, -0.210697f,  0.000000f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,  0.000000f,  0.065795f } },
-        { Aux0,  { 1.414213562f } }, // Fix these. Make them Mono for now.
-        { Aux0,  { 1.414213562f } },
-        { Aux1,  { 1.414213562f } },
-        { Aux2,  { 1.414213562f } },
-        { Aux3,  { 1.414213562f } },
-        { Aux4,  { 1.414213562f } },
-        { Aux5,  { 1.414213562f } },
-        { Aux6,  { 1.414213562f } },
-        { Aux7,  { 1.414213562f } },
-        { Aux8,  { 1.414213562f } },
-        { Aux9,  { 1.414213562f } },
-        { Aux10, { 1.414213562f } },
-        { Aux11, { 1.414213562f } },
-        { Aux12, { 1.414213562f } },
-        { Aux13, { 1.414213562f } },
+#if 1
+    },
+	XRME22Cfg[21] = {
+        { FrontLeft,   { 0.707106781f, 0.0f,  0.5f, 0.0f } },
+        { FrontRight,  { 0.707106781f, 0.0f, -0.5f, 0.0f } },
+        { FrontCenter, { 0.707106781f, 0.0f,  0.5f, 0.0f } },
+        { BackLeft,    { 0.707106781f, 0.0f,  0.5f, 0.0f } },
+        { BackRight,   { 0.707106781f, 0.0f, -0.5f, 0.0f } },
+        { SideLeft,    { 0.707106781f, 0.0f,  0.5f, 0.0f } },
+        { SideRight,   { 0.707106781f, 0.0f, -0.5f, 0.0f } },
+        { Aux0,        { 0.707106781f, 0.0f, -0.5f, 0.0f } },
+        { Aux1,        { 0.707106781f, 0.0f,  0.5f, 0.0f } },
+        { Aux2,        { 0.707106781f, 0.0f, -0.5f, 0.0f } },
+        { Aux3,        { 0.707106781f, 0.0f,  0.5f, 0.0f } },
+        { Aux4,        { 0.707106781f, 0.0f, -0.5f, 0.0f } },
+        { Aux5,        { 0.707106781f, 0.0f,  0.5f, 0.0f } },
+        { Aux6,        { 0.707106781f, 0.0f, -0.5f, 0.0f } },
+        { Aux7,        { 0.707106781f, 0.0f,  0.5f, 0.0f } },
+        { Aux8,        { 0.707106781f, 0.0f, -0.5f, 0.0f } },
+        { Aux9,        { 0.707106781f, 0.0f,  0.5f, 0.0f } },
+        { Aux10,       { 0.707106781f, 0.0f, -0.5f, 0.0f } },
+        { Aux11,       { 0.707106781f, 0.0f,  0.5f, 0.0f } },
+        { Aux12,       { 0.707106781f, 0.0f, -0.5f, 0.0f } },
+        { Aux13,       { 0.707106781f, 0.0f,  0.5f, 0.0f } }
     };
+
+	// Copy X71Cfg. FIX this later. See:
+	// https://github.com/kcat/openal-soft/commit/4d36ef65b2ec1cd3122bf9ee615df452f003d014
+	// Not sure that even makes sense. scrap this
+	// and write mono values for now [18Apr16]
+	// and it prob needs to be '20' bc there's 2 LFE channels!
+#else
+    }, XRME22Cfg[21] = { 
+        { FrontLeft,   { 1.414213562f } },
+        { FrontRight,  { 1.414213562f } },
+        { FrontCenter, { 1.414213562f } },
+        { BackLeft,    { 1.414213562f } },
+        { BackRight,   { 1.414213562f } },
+        { SideLeft,    { 1.414213562f } },
+        { SideRight,   { 1.414213562f } },
+        { LFE,         { 1.414213562f } }, 
+        { Aux0,        { 1.414213562f } }, 
+        { Aux1,        { 1.414213562f } },
+        { Aux2,        { 1.414213562f } },
+        { Aux3,        { 1.414213562f } },
+        { Aux4,        { 1.414213562f } },
+        { Aux5,        { 1.414213562f } },
+        { Aux6,        { 1.414213562f } },
+        { Aux7,        { 1.414213562f } },
+        { Aux8,        { 1.414213562f } },
+        { Aux9,        { 1.414213562f } },
+        { Aux10,       { 1.414213562f } },
+        { Aux11,       { 1.414213562f } },
+        { Aux12,       { 1.414213562f } },
+        { Aux13,       { 1.414213562f } },
+    };
+#endif
+
     const ChannelMap *chanmap = NULL;
     ALfloat ambiscale = 1.0f;
     size_t count = 0;
@@ -618,7 +661,9 @@ ALvoid aluInitPanning(ALCdevice *device)
         case DevFmtXRME22:
             count = COUNTOF(XRME22Cfg);
             chanmap = XRME22Cfg;
-            ambiscale = THIRD_ORDER_SCALE;
+            // ambiscale = THIRD_ORDER_SCALE;
+            // ambiscale = ZERO_ORDER_SCALE;
+            ambiscale = FIRST_ORDER_SCALE;
             break;
 
         case DevFmtBFormat3D:

@@ -391,7 +391,7 @@ static ALCboolean pulse_open(pa_threaded_mainloop **loop, pa_context **context,
     {
         pa_threaded_mainloop_unlock(*loop);
         pa_threaded_mainloop_stop(*loop);
-		ERR("b. pa_threaded_mainloop_start() could not connect to context\n");
+	ERR("b. pulse_open() could not connect to pa_threaded_mainloop context\n");
         goto error;
     }
     pa_context_set_state_callback(*context, state_cb, ptr);
@@ -554,7 +554,7 @@ static void ALCpulsePlayback_deviceCallback(pa_context *UNUSED(context), const p
         count++;
     }
 
-    TRACE("Got device \"%s\", \"%s\"\n", al_string_get_cstr(entry.name), al_string_get_cstr(entry.device_name));
+    TRACE("b. Got device \"%s\", \"%s\"\n", al_string_get_cstr(entry.name), al_string_get_cstr(entry.device_name));
 
     VECTOR_PUSH_BACK(PlaybackDevices, entry);
 }
@@ -584,20 +584,21 @@ static void ALCpulsePlayback_probeDevices(void)
 
 
 // HACK - try this format.  Thu Apr  9 19:19:28 AEST 2015
+// seems we start with 2 channels, then change to more if we can. [ben 22Feb16]
 
-            spec.format = PA_SAMPLE_S16NE;
+            // spec.format = PA_SAMPLE_S16LE;
+            spec.format = PA_SAMPLE_S16LE;
             spec.rate = 44100;
             spec.channels = 2;
 
-            // spec.format = PA_SAMPLE_FLOAT32NE;
+            // spec.format = PA_SAMPLE_FLOAT32LE;
             // spec.format = PA_SAMPLE_S32LE;
             // spec.format = PA_SAMPLE_S16LE;
             // spec.rate = 44100;
             // spec.channels = 22;
             // spec.channels = 1;
 
-// check that we ever see this!? [ben 20Apr15]
-printf("\nProbe Devices\n");
+printf("\n1. Probe Devices\n");
 
             stream = ALCpulsePlayback_connectStream(NULL, loop, context, flags,
                                                     NULL, &spec, NULL);
@@ -617,9 +618,9 @@ printf("\nProbe Devices\n");
 
             pa_context_disconnect(context);
             pa_context_unref(context);
-        }
-		else
-			TRACE("b. ALCpulsePlayback_probeDevices() did not have a context\n");
+	}
+	else
+	    TRACE("b. ALCpulsePlayback_probeDevices() did not have a context\n");
 
         pa_threaded_mainloop_unlock(loop);
         pa_threaded_mainloop_stop(loop);
@@ -722,7 +723,7 @@ static void ALCpulsePlayback_sinkInfoCallback(pa_context *UNUSED(context), const
     if(eol)
     {
         pa_threaded_mainloop_signal(self->loop, 0);
-		TRACE("b. ALCpulsePlayback_sinkInfoCallback(): eol\n");
+	TRACE("b. ALCpulsePlayback_sinkInfoCallback(): eol\n");
         return;
     }
 
@@ -733,7 +734,7 @@ static void ALCpulsePlayback_sinkInfoCallback(pa_context *UNUSED(context), const
             if(!(device->Flags&DEVICE_CHANNELS_REQUEST))
             {
                 device->FmtChans = chanmaps[i].chans;
-                printf("\ndevice->FmtChans is %s\n\n", chanmaps[i].str);
+                printf("\ndevice->FmtChans is 0x%x\n\n", chanmaps[i].chans);
             }
             break;
         }
@@ -785,7 +786,8 @@ static pa_stream *ALCpulsePlayback_connectStream(const char *device_name,
     pa_stream_state_t state;
     pa_stream *stream;
 
-// printf("\n\nCONNECT %s %s %s\n\n", spec, chanmap, prop_filter);
+printf("\n\nCONNECT %d %d\n\n", spec->channels, spec->rate);
+
 
     stream = pa_stream_new_with_proplist(context, "Playback Stream", spec, chanmap, prop_filter);
     if(!stream)
@@ -904,7 +906,10 @@ static ALCenum ALCpulsePlayback_open(ALCpulsePlayback *self, const ALCchar *name
     }
 
     if(!pulse_open(&self->loop, &self->context, ALCpulsePlayback_contextStateCallback, self))
+	{
+		TRACE("b. pulse_open() returned ALC_INVALID_VALUE\n");
         return ALC_INVALID_VALUE;
+	}
 
     pa_threaded_mainloop_lock(self->loop);
 
@@ -916,18 +921,18 @@ static ALCenum ALCpulsePlayback_open(ALCpulsePlayback *self, const ALCchar *name
 
 // HACK - try this format.  Thu Apr  9 19:19:28 AEST 2015
 
-    spec.format = PA_SAMPLE_S16NE;
+    spec.format = PA_SAMPLE_S16LE;
     spec.rate = 44100;
     spec.channels = 2;
 
-    // spec.format = PA_SAMPLE_FLOAT32NE;
+    // spec.format = PA_SAMPLE_FLOAT32LE;
     // spec.format = PA_SAMPLE_S32LE;
     // spec.format = PA_SAMPLE_S16LE;
     // spec.rate = 44100;
     // spec.channels = 22;
     // spec.channels = 1;
 
-printf("\nConnect to Device\n");
+printf("\n2. Connect to Device\n");
 
 
     TRACE("Connecting to \"%s\"\n", pulse_name ? pulse_name : "(default)");
@@ -1020,16 +1025,16 @@ static ALCboolean ALCpulsePlayback_reset(ALCpulsePlayback *self)
             device->FmtType = DevFmtShort;
             /* fall-through */
         case DevFmtShort:
-            self->spec.format = PA_SAMPLE_S16NE;
+            self->spec.format = PA_SAMPLE_S16LE;
             break;
         case DevFmtUInt:
             device->FmtType = DevFmtInt;
             /* fall-through */
         case DevFmtInt:
-            self->spec.format = PA_SAMPLE_S32NE;
+            self->spec.format = PA_SAMPLE_S32LE;
             break;
         case DevFmtFloat:
-            self->spec.format = PA_SAMPLE_FLOAT32NE;
+            self->spec.format = PA_SAMPLE_FLOAT32LE;
             break;
     }
     self->spec.rate = device->Frequency;
@@ -1330,9 +1335,9 @@ static void ALCpulseCapture_probeDevices(void)
             flags = PA_STREAM_FIX_FORMAT | PA_STREAM_FIX_RATE |
                     PA_STREAM_FIX_CHANNELS | PA_STREAM_DONT_MOVE;
 
-            spec.format = PA_SAMPLE_S16NE;
+            spec.format = PA_SAMPLE_S16LE;
             spec.rate = 44100;
-            spec.channels = 1;
+            spec.channels = 1;  // or = 2 ??
             // spec.channels = 22;
 
             stream = ALCpulseCapture_connectStream(NULL, loop, context, flags,
@@ -1489,13 +1494,13 @@ static ALCenum ALCpulseCapture_open(ALCpulseCapture *self, const ALCchar *name)
             self->spec.format = PA_SAMPLE_U8;
             break;
         case DevFmtShort:
-            self->spec.format = PA_SAMPLE_S16NE;
+            self->spec.format = PA_SAMPLE_S16LE;
             break;
         case DevFmtInt:
-            self->spec.format = PA_SAMPLE_S32NE;
+            self->spec.format = PA_SAMPLE_S32LE;
             break;
         case DevFmtFloat:
-            self->spec.format = PA_SAMPLE_FLOAT32NE;
+            self->spec.format = PA_SAMPLE_FLOAT32LE;
             break;
         case DevFmtByte:
         case DevFmtUShort:

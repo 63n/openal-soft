@@ -268,41 +268,65 @@ static ALCboolean ALCwaveBackend_reset(ALCwaveBackend *self)
         case DevFmtFloat:
             break;
     }
+
+	/* WAV Format dwChannelMask is defined here:
+	   https://msdn.microsoft.com/en-us/library/windows/hardware/ff538802%28v=vs.85%29.aspx
+	   Channel locations beyond these predefined ones are considered reserved.
+
+        Speaker position                Flag bit
+
+        SPEAKER_FRONT_LEFT              0x1
+        SPEAKER_FRONT_RIGHT             0x2
+        SPEAKER_FRONT_CENTER            0x4
+        SPEAKER_LOW_FREQUENCY           0x8
+        SPEAKER_BACK_LEFT               0x10
+        SPEAKER_BACK_RIGHT              0x20
+        SPEAKER_FRONT_LEFT_OF_CENTER    0x40
+        SPEAKER_FRONT_RIGHT_OF_CENTER   0x80
+        SPEAKER_BACK_CENTER             0x100
+        SPEAKER_SIDE_LEFT               0x200
+        SPEAKER_SIDE_RIGHT              0x400
+        SPEAKER_TOP_CENTER              0x800
+        SPEAKER_TOP_FRONT_LEFT          0x1000
+        SPEAKER_TOP_FRONT_CENTER        0x2000
+        SPEAKER_TOP_FRONT_RIGHT         0x4000
+        SPEAKER_TOP_BACK_LEFT           0x8000
+        SPEAKER_TOP_BACK_CENTER         0x10000
+        SPEAKER_TOP_BACK_RIGHT          0x20000
+	*/
     switch(device->FmtChans)
     {
         case DevFmtMono:   chanmask = 0x04; break;
         case DevFmtStereo: chanmask = 0x01 | 0x02; break;
         case DevFmtQuad:   chanmask = 0x01 | 0x02 | 0x10 | 0x20; break;
-        case DevFmtX51: chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x200 | 0x400; break;
-        case DevFmtX51Rear: chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x010 | 0x020; break;
-        case DevFmtX61: chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x100 | 0x200 | 0x400; break;
-        case DevFmtX71: chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x010 | 0x020 | 0x200 | 0x400; break;
+        case DevFmtX51:    chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x200 | 0x400; break;
+        case DevFmtX51Rear:chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x010 | 0x020; break;
+        case DevFmtX61:    chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x100 | 0x200 | 0x400; break;
+        case DevFmtX71:    chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x010 | 0x020 | 0x200 | 0x400; break;
 
-	// 
-	// WAV channel masks defined here:
-	// https://msdn.microsoft.com/en-us/library/windows/hardware/ff538802%28v=vs.85%29.aspx
-	// We want to enable channels 1-16 (being 0x1 to 0x8000)
-	// It seems wav only defined/knows about 18 channels
-	//
-	// To test if this is working we could try to set the mask to 0?
-	// [ben 22Apr15]
-	//
-	// 16 channel mask
-#if 1
-        case DevFmtXRME22: chanmask = 0x1 | 0x2 | 0x4 | 0x8 
-		| 0x10   | 0x20   | 0x40   | 0x080 
-		| 0x100  | 0x200  | 0x400  | 0x800  
-		| 0x1000 | 0x2000 | 0x4000 | 0x8000 ; break;
-#else
+		/*
+		   The DevFmtXRME22 chanmask is "direct out" which is 0
+		   This will pass through all channels for RME22
 
-	// 22 channel mask
-        case DevFmtXRME22: chanmask = 0x1 | 0x2 | 0x4 | 0x8 
-		| 0x10    | 0x20    | 0x40    | 0x080 
-		| 0x100   | 0x200   | 0x400   | 0x800  
-		| 0x1000  | 0x2000  | 0x4000  | 0x8000
-		| 0x10000 | 0x20000 | 0x40000 | 0x80000
-		| 0x100000| 0x200000 ; break;
-#endif
+		   https://msdn.microsoft.com/en-us/library/windows/hardware/ff536368%28v=vs.85%29.aspx
+
+		   In direct-out mode "KSAUDIO_SPEAKER_DIRECTOUT", the audio device renders
+		   the first channel to the first output connector on the device, the second
+		   channel to the second output on the device, and so on. This allows an audio
+		   authoring application to output multichannel data directly to a device such
+		   as an external mixer or an audio storage device (hard disk, ADAT, and so on).
+
+		   When specifying the wave format for a direct-out stream, an application
+		   should set the dwChannelMask member of the WAVEFORMATEXTENSIBLE structure to
+		   the value KSAUDIO_SPEAKER_DIRECTOUT, which is zero. A channel mask of zero
+		   indicates that no speaker positions are defined. As always, the number of
+		   channels in the stream is specified in the Format.nChannels member.
+		*/
+        case DevFmtXRME22:
+		ERR("\n\nHEY WE ARE IN WAV CASE DevFmtXRME22\n\n\n");
+		isbformat = 0;
+		chanmask = 0;
+		break;
 
         case DevFmtBFormat3D:
             isbformat = 1;
