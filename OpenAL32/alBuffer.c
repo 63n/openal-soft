@@ -144,8 +144,6 @@ AL_API ALvoid AL_APIENTRY alBufferData(ALuint buffer, ALenum format, const ALvoi
     ALsizei align;
     ALenum err;
 
-// printf("in alBufferData()\n");
-
     context = GetContextRef();
     if(!context) return;
 
@@ -153,55 +151,45 @@ AL_API ALvoid AL_APIENTRY alBufferData(ALuint buffer, ALenum format, const ALvoi
     if((albuf=LookupBuffer(device, buffer)) == NULL)
         SET_ERROR_AND_GOTO(context, AL_INVALID_NAME, done);
 
+/*
 // printf("alBufferData check size & freq: %d %d\n", (int)size, (int)freq);
+*/
     if(!(size >= 0 && freq > 0)) {
 	printf("alBufferData() AL_INVALID_VALUE size and freq\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 }
 
+/*
 // printf("alBufferData/DecomposeUserFormat called\n");
 // printf("alBufferData/DecomposeUserFormat before. srcchannels: 0x%x    srctype: 0x%x\n", srcchannels, srctype);
+*/
 
     if(DecomposeUserFormat(format, &srcchannels, &srctype) == AL_FALSE)
         SET_ERROR_AND_GOTO(context, AL_INVALID_ENUM, done);
 
-// printf("alBufferData/DecomposeUserFormat after.  srcchannels: 0x%x    srctype: 0x%x\n", srcchannels, srctype);
-// printf("alBufferData/DecomposeUserFormat returned\n");
-
     align = ATOMIC_LOAD(&albuf->UnpackAlign);
 
-// printf("Align from ATOMIC_LOAD is: %d\n", align);
-
-
-// printf("alBufferData/SanitizeAlignment called\n");
     if(SanitizeAlignment(srctype, &align) == AL_FALSE) {
 	printf("alBufferData() AL_INVALID_VALUE SanitizeAlignment\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 }
-// printf("Align after SanitizeAlignment() is: %d\n", align);
-// printf("alBufferData/SanitizeAlignment ret\n");
 
 
 
     switch(srctype)
     {
         case UserFmtByte:
-// printf("alBufferData srctype UserFmtByte\n");
         case UserFmtUByte:
-// printf("alBufferData srctype UserFmtUByte\n");
         case UserFmtShort:
-// printf("alBufferData srctype UserFmtShort\n");
         case UserFmtUShort:
-// printf("alBufferData srctype UserFmtUShort\n");
         case UserFmtFloat:
-// printf("alBufferData srctype UserFmtFloat\n");
 
 
-// printf("About to calc framesize. srcchannels: 0x%x     srctype: 0x%x    align: %d\n", srcchannels, srctype, align);
+/*
+printf("About to calc framesize. srcchannels: 0x%x     srctype: 0x%x    align: %d\n", srcchannels, srctype, align);
+*/
 
             framesize = FrameSizeFromUserFmt(srcchannels, srctype) * align;
-// printf("alBufferData check framesize:  %d\n", framesize);
-// printf("alBufferData check modulus: size vs framesize:  %f\n", (float)(size%framesize));
 
             if((size%framesize) != 0) {
 		printf("alBufferData() AL_INVALID_VALUE UserFmtByte\n");
@@ -219,10 +207,7 @@ AL_API ALvoid AL_APIENTRY alBufferData(ALuint buffer, ALenum format, const ALvoi
         case UserFmtByte3:
         case UserFmtUByte3:
         case UserFmtDouble:
-// printf("alBufferData srctype UserFmtInt\n");
             framesize = FrameSizeFromUserFmt(srcchannels, srctype) * align;
-// printf("alBufferData check framesize:  %d\n", framesize);
-// printf("alBufferData check modulus: size vs framesize:  %f\n", (float)(size%framesize));
             if((size%framesize) != 0) {
 		printf("alBufferData() AL_INVALID_VALUE UserFmtInt\n");
                 SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
@@ -249,10 +234,14 @@ AL_API ALvoid AL_APIENTRY alBufferData(ALuint buffer, ALenum format, const ALvoi
 
         case UserFmtMulaw:
         case UserFmtAlaw:
+/*
 // printf("alBufferData srctype UserFmtMulaw\n");
+*/
             framesize = FrameSizeFromUserFmt(srcchannels, srctype) * align;
+/*
 // printf("alBufferData check framesize:  %d\n", framesize);
 // printf("alBufferData check modulus: size vs framesize:  %f\n", (float)(size%framesize));
+*/
             if((size%framesize) != 0) {
 		printf("alBufferData() AL_INVALID_VALUE UserFmtMulaw\n");
                 SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
@@ -278,7 +267,9 @@ AL_API ALvoid AL_APIENTRY alBufferData(ALuint buffer, ALenum format, const ALvoi
             break;
 
         case UserFmtIMA4:
-// printf("alBufferData srctype UserFmtIMA4\n");
+/*
+printf("alBufferData srctype UserFmtIMA4\n");
+*/
             framesize  = (align-1)/2 + 4;
             framesize *= ChannelsFromUserFmt(srcchannels);
             if((size%framesize) != 0) {
@@ -306,11 +297,15 @@ AL_API ALvoid AL_APIENTRY alBufferData(ALuint buffer, ALenum format, const ALvoi
             break;
 
         case UserFmtMSADPCM:
-// printf("alBufferData srctype UserFmtMSADPCM\n");
+/*
+printf("alBufferData srctype UserFmtMSADPCM\n");
+*/
             framesize  = (align-2)/2 + 7;
             framesize *= ChannelsFromUserFmt(srcchannels);
-// printf("alBufferData check framesize:  %d\n", framesize);
-// printf("alBufferData check modulus: size vs framesize:  %f\n", (float)(size%framesize));
+/*
+printf("alBufferData check framesize:  %d\n", framesize);
+printf("alBufferData check modulus: size vs framesize:  %f\n", (float)(size%framesize));
+*/
             if((size%framesize) != 0) {
 		printf("alBufferData() AL_INVALID_VALUE UserFmtMSADPCM\n");
                 SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
@@ -363,12 +358,8 @@ AL_API ALvoid AL_APIENTRY alBufferSubDataSOFT(ALuint buffer, ALenum format, cons
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 	}
 
-// printf("DecomposeUserFormat() start\n");
-
     if(DecomposeUserFormat(format, &srcchannels, &srctype) == AL_FALSE)
         SET_ERROR_AND_GOTO(context, AL_INVALID_ENUM, done);
-
-// printf("DecomposeUserFormat() done\n");
 
     WriteLock(&albuf->lock);
     align = ATOMIC_LOAD(&albuf->UnpackAlign);
@@ -1164,7 +1155,6 @@ ALuint ChannelsFromUserFmt(enum UserFmtChannels chans)
     case UserFmtX51: return 6;
     case UserFmtX61: return 7;
     case UserFmtX71: return 8;
-    // case UserFmtXRME22: return 16;
     case UserFmtXRME22: return 22;
     case UserFmtBFormat2D: return 3;
     case UserFmtBFormat3D: return 4;
@@ -1276,7 +1266,6 @@ ALuint ChannelsFromFmt(enum FmtChannels chans)
     case FmtX51: return 6;
     case FmtX61: return 7;
     case FmtX71: return 8;
-    // case FmtXRME22: return 16;
     case FmtXRME22: return 22;
     case FmtBFormat2D: return 3;
     case FmtBFormat3D: return 4;
@@ -1325,13 +1314,13 @@ static ALboolean DecomposeFormat(ALenum format, enum FmtChannels *chans, enum Fm
         { AL_RME22_16_SOFT,  FmtXRME22, FmtShort },
         { AL_RME22_32F_SOFT, FmtXRME22, FmtFloat },
 
-        { AL_FORMAT_BFORMAT2D_8,       FmtBFormat2D, FmtByte },
-        { AL_FORMAT_BFORMAT2D_16,      FmtBFormat2D, FmtShort },
-        { AL_FORMAT_BFORMAT2D_FLOAT32, FmtBFormat2D, FmtFloat },
+        { AL_BFORMAT2D_8_SOFT,   FmtBFormat2D, FmtByte },
+        { AL_BFORMAT2D_16_SOFT,  FmtBFormat2D, FmtShort },
+        { AL_BFORMAT2D_32F_SOFT, FmtBFormat2D, FmtFloat },
 
-        { AL_FORMAT_BFORMAT3D_8,       FmtBFormat3D, FmtByte },
-        { AL_FORMAT_BFORMAT3D_16,      FmtBFormat3D, FmtShort },
-        { AL_FORMAT_BFORMAT3D_FLOAT32, FmtBFormat3D, FmtFloat },
+        { AL_BFORMAT3D_8_SOFT,   FmtBFormat3D, FmtByte },
+        { AL_BFORMAT3D_16_SOFT,  FmtBFormat3D, FmtShort },
+        { AL_BFORMAT3D_32F_SOFT, FmtBFormat3D, FmtFloat },
     };
     ALuint i;
 
@@ -1401,6 +1390,7 @@ static ALboolean IsValidType(ALenum type)
         case AL_DOUBLE_SOFT:
         case AL_BYTE3_SOFT:
         case AL_UNSIGNED_BYTE3_SOFT:
+        case AL_MULAW_SOFT:
             return AL_TRUE;
     }
     return AL_FALSE;
@@ -1418,6 +1408,8 @@ static ALboolean IsValidChannels(ALenum channels)
         case AL_6POINT1_SOFT:
         case AL_7POINT1_SOFT:
         case AL_RME22_SOFT:
+        case AL_BFORMAT2D_SOFT:
+        case AL_BFORMAT3D_SOFT:
             return AL_TRUE;
     }
     return AL_FALSE;

@@ -103,16 +103,18 @@ static ALvoid ALequalizerState_update(ALequalizerState *state, const ALCdevice *
     aluMatrixf matrix;
     ALuint i;
 
-    gain = device->AmbiScale;
     aluMatrixfSet(&matrix,
         1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, gain, 0.0f, 0.0f,
-        0.0f, 0.0f, gain, 0.0f,
-        0.0f, 0.0f, 0.0f, gain
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f
     );
+
+    STATIC_CAST(ALeffectState,state)->OutBuffer = device->FOAOut.Buffer;
+    STATIC_CAST(ALeffectState,state)->OutChannels = device->FOAOut.NumChannels;
     for(i = 0;i < MAX_EFFECT_CHANNELS;i++)
-        ComputeFirstOrderGains(device->AmbiCoeffs, device->NumChannels,
-                               matrix.m[i], slot->Gain, state->Gain[i]);
+        ComputeFirstOrderGains(device->FOAOut, matrix.m[i], slot->Gain,
+                               state->Gain[i]);
 
     /* Calculate coefficients for the each type of filter. Note that the shelf
      * filters' gain is for the reference frequency, which is the centerpoint

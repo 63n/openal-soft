@@ -41,6 +41,7 @@ OPTION(ALSOFT_TESTS     "Build and install test programs"     ON)
 
 OPTION(ALSOFT_CONFIG "Install alsoft.conf sample configuration file" ON)
 OPTION(ALSOFT_HRTF_DEFS "Install HRTF definition files" ON)
+OPTION(ALSOFT_AMBDEC_PRESETS "Install AmbDec preset files" ON)
 OPTION(ALSOFT_INSTALL "Install headers and libraries" ON)
 
 
@@ -607,7 +608,8 @@ IF(NOT HAVE_STDINT_H)
 ENDIF()
 
 
-SET(COMMON_OBJS  common/atomic.c
+SET(COMMON_OBJS  common/almalloc.c
+                 common/atomic.c
                  common/rwlock.c
                  common/threads.c
                  common/uintmap.c
@@ -643,6 +645,9 @@ SET(ALC_OBJS  Alc/ALc.c
               Alc/helpers.c
               Alc/bsinc.c
               Alc/hrtf.c
+              Alc/uhjfilter.c
+              Alc/ambdec.c
+              Alc/bformatdec.c
               Alc/panning.c
               Alc/mixer.c
               Alc/mixer_c.c
@@ -1218,6 +1223,20 @@ IF(ALSOFT_HRTF_DEFS)
     INSTALL(FILES hrtf/default-44100.mhr
                   hrtf/default-48000.mhr
             DESTINATION ${SHARE_INSTALL_DIR}/openal/hrtf
+    )
+    MESSAGE(STATUS "Installing HRTF definitions")
+    MESSAGE(STATUS "")
+ENDIF()
+
+# Install AmbDec presets
+IF(ALSOFT_AMBDEC_PRESETS)
+    INSTALL(FILES presets/3D7.1.ambdec
+                  presets/hexagon.ambdec
+                  presets/itu5.1.ambdec
+                  presets/rectangle.ambdec
+                  presets/square.ambdec
+                  presets/presets.txt
+            DESTINATION ${SHARE_INSTALL_DIR}/openal/presets
     )
     MESSAGE(STATUS "Installing HRTF definitions")
     MESSAGE(STATUS "")

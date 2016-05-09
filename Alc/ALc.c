@@ -35,12 +35,13 @@
 #include "alBuffer.h"
 #include "alAuxEffectSlot.h"
 #include "alError.h"
-#include "bs2b.h"
+#include "bformatdec.h"
 #include "alu.h"
 
 #include "compat.h"
 #include "threads.h"
 #include "alstring.h"
+#include "almalloc.h"
 
 #include "backends/base.h"
 
@@ -271,13 +272,6 @@ static const ALCfunction alcFunctions[] = {
     DECL(alGetAuxiliaryEffectSlotf),
     DECL(alGetAuxiliaryEffectSlotfv),
 
-    DECL(alBufferSubDataSOFT),
-
-    DECL(alBufferSamplesSOFT),
-    DECL(alBufferSubSamplesSOFT),
-    DECL(alGetBufferSamplesSOFT),
-    DECL(alIsBufferFormatSupportedSOFT),
-
     DECL(alDeferUpdatesSOFT),
     DECL(alProcessUpdatesSOFT),
 
@@ -293,6 +287,10 @@ static const ALCfunction alcFunctions[] = {
     DECL(alGetSourcei64SOFT),
     DECL(alGetSource3i64SOFT),
     DECL(alGetSourcei64vSOFT),
+
+    DECL(alBufferSamplesSOFT),
+    DECL(alGetBufferSamplesSOFT),
+    DECL(alIsBufferFormatSupportedSOFT),
 
     { NULL, NULL }
 };
@@ -392,9 +390,7 @@ static const ALCenums enumeration[] = {
     DECL(AL_MAX_DISTANCE),
     DECL(AL_SEC_OFFSET),
     DECL(AL_SAMPLE_OFFSET),
-    DECL(AL_SAMPLE_RW_OFFSETS_SOFT),
     DECL(AL_BYTE_OFFSET),
-    DECL(AL_BYTE_RW_OFFSETS_SOFT),
     DECL(AL_SOURCE_TYPE),
     DECL(AL_STATIC),
     DECL(AL_STREAMING),
@@ -466,6 +462,15 @@ static const ALCenums enumeration[] = {
     DECL(AL_FORMAT_MONO_ALAW_EXT),
     DECL(AL_FORMAT_STEREO_ALAW_EXT),
 
+    DECL(AL_FORMAT_BFORMAT2D_8),
+    DECL(AL_FORMAT_BFORMAT2D_16),
+    DECL(AL_FORMAT_BFORMAT2D_FLOAT32),
+    DECL(AL_FORMAT_BFORMAT2D_MULAW),
+    DECL(AL_FORMAT_BFORMAT3D_8),
+    DECL(AL_FORMAT_BFORMAT3D_16),
+    DECL(AL_FORMAT_BFORMAT3D_FLOAT32),
+    DECL(AL_FORMAT_BFORMAT3D_MULAW),
+
     DECL(AL_MONO8_SOFT),
     DECL(AL_MONO16_SOFT),
     DECL(AL_MONO32F_SOFT),
@@ -490,14 +495,12 @@ static const ALCenums enumeration[] = {
     DECL(AL_RME22_8_SOFT),
     DECL(AL_RME22_16_SOFT),
     DECL(AL_RME22_32F_SOFT),
-    DECL(AL_FORMAT_BFORMAT2D_8),
-    DECL(AL_FORMAT_BFORMAT2D_16),
-    DECL(AL_FORMAT_BFORMAT2D_FLOAT32),
-    DECL(AL_FORMAT_BFORMAT2D_MULAW),
-    DECL(AL_FORMAT_BFORMAT3D_8),
-    DECL(AL_FORMAT_BFORMAT3D_16),
-    DECL(AL_FORMAT_BFORMAT3D_FLOAT32),
-    DECL(AL_FORMAT_BFORMAT3D_MULAW),
+    DECL(AL_BFORMAT2D_8_SOFT),
+    DECL(AL_BFORMAT2D_16_SOFT),
+    DECL(AL_BFORMAT2D_32F_SOFT),
+    DECL(AL_BFORMAT3D_8_SOFT),
+    DECL(AL_BFORMAT3D_16_SOFT),
+    DECL(AL_BFORMAT3D_32F_SOFT),
 
     DECL(AL_MONO_SOFT),
     DECL(AL_STEREO_SOFT),
@@ -507,6 +510,8 @@ static const ALCenums enumeration[] = {
     DECL(AL_6POINT1_SOFT),
     DECL(AL_7POINT1_SOFT),
     DECL(AL_RME22_SOFT),
+    DECL(AL_BFORMAT2D_SOFT),
+    DECL(AL_BFORMAT3D_SOFT),
 
     DECL(AL_BYTE_SOFT),
     DECL(AL_UNSIGNED_BYTE_SOFT),
@@ -518,6 +523,7 @@ static const ALCenums enumeration[] = {
     DECL(AL_DOUBLE_SOFT),
     DECL(AL_BYTE3_SOFT),
     DECL(AL_UNSIGNED_BYTE3_SOFT),
+    DECL(AL_MULAW_SOFT),
 
     DECL(AL_FREQUENCY),
     DECL(AL_BITS),
@@ -529,6 +535,10 @@ static const ALCenums enumeration[] = {
     DECL(AL_SEC_LENGTH_SOFT),
     DECL(AL_UNPACK_BLOCK_ALIGNMENT_SOFT),
     DECL(AL_PACK_BLOCK_ALIGNMENT_SOFT),
+
+    DECL(AL_SOURCE_RADIUS),
+
+    DECL(AL_STEREO_ANGLES),
 
     DECL(AL_UNUSED),
     DECL(AL_PENDING),
@@ -719,8 +729,8 @@ static const ALchar alExtList[] =
     "AL_EXT_ALAW AL_EXT_BFORMAT AL_EXT_DOUBLE AL_EXT_EXPONENT_DISTANCE "
     "AL_EXT_FLOAT32 AL_EXT_IMA4 AL_EXT_LINEAR_DISTANCE AL_EXT_MCFORMATS "
     "AL_EXT_MULAW AL_EXT_MULAW_BFORMAT AL_EXT_MULAW_MCFORMATS AL_EXT_OFFSET "
-    "AL_EXT_source_distance_model AL_LOKI_quadriphonic AL_SOFT_block_alignment "
-    "AL_SOFT_buffer_samples AL_SOFT_buffer_sub_data AL_SOFT_deferred_updates "
+    "AL_EXT_source_distance_model AL_EXT_SOURCE_RADIUS AL_EXT_STEREO_ANGLES "
+    "AL_LOKI_quadriphonic AL_SOFT_block_alignment AL_SOFT_deferred_updates "
     "AL_SOFT_direct_channels AL_SOFT_loop_points AL_SOFT_MSADPCM "
     "AL_SOFT_source_latency AL_SOFT_source_length";
 
@@ -1127,6 +1137,11 @@ static void alc_initconfig(void)
         V0(factory,init)();
     }
 
+    if(!PlaybackBackend.name)
+        WARN("No playback backend available!\n");
+    if(!CaptureBackend.name)
+        WARN("No capture backend available!\n");
+
     if(ConfigValueStr(NULL, NULL, "excludefx", &str))
     {
         size_t len;
@@ -1240,9 +1255,9 @@ static void ProbeDevices(al_string *list, struct BackendInfo *backendinfo, enum 
     LockLists();
     al_string_clear(list);
 
-    if(!backendinfo->getFactory)
+    if(backendinfo->Probe)
         backendinfo->Probe(type);
-    else
+    else if(backendinfo->getFactory)
     {
         ALCbackendFactory *factory = backendinfo->getFactory();
         V(factory,probe)(type);
@@ -1421,11 +1436,6 @@ DECL_CONST static ALCboolean IsValidALCChannels(ALCenum channels)
 /************************************************
  * Miscellaneous ALC helpers
  ************************************************/
-enum HrtfRequestMode {
-    Hrtf_Default = 0,
-    Hrtf_Enable = 1,
-    Hrtf_Disable = 2,
-};
 
 extern inline void LockContext(ALCcontext *context);
 extern inline void UnlockContext(ALCcontext *context);
@@ -1450,86 +1460,87 @@ void SetDefaultWFXChannelOrder(ALCdevice *device)
     ALuint i;
 
     for(i = 0;i < MAX_OUTPUT_CHANNELS;i++)
-        device->ChannelName[i] = InvalidChannel;
+        device->RealOut.ChannelName[i] = InvalidChannel;
 
     switch(device->FmtChans)
     {
     case DevFmtMono:
-        device->ChannelName[0] = FrontCenter;
+        device->RealOut.ChannelName[0] = FrontCenter;
         break;
     case DevFmtStereo:
-        device->ChannelName[0] = FrontLeft;
-        device->ChannelName[1] = FrontRight;
+        device->RealOut.ChannelName[0] = FrontLeft;
+        device->RealOut.ChannelName[1] = FrontRight;
         break;
     case DevFmtQuad:
-        device->ChannelName[0] = FrontLeft;
-        device->ChannelName[1] = FrontRight;
-        device->ChannelName[2] = BackLeft;
-        device->ChannelName[3] = BackRight;
+        device->RealOut.ChannelName[0] = FrontLeft;
+        device->RealOut.ChannelName[1] = FrontRight;
+        device->RealOut.ChannelName[2] = BackLeft;
+        device->RealOut.ChannelName[3] = BackRight;
         break;
     case DevFmtX51:
-        device->ChannelName[0] = FrontLeft;
-        device->ChannelName[1] = FrontRight;
-        device->ChannelName[2] = FrontCenter;
-        device->ChannelName[3] = LFE;
-        device->ChannelName[4] = SideLeft;
-        device->ChannelName[5] = SideRight;
+        device->RealOut.ChannelName[0] = FrontLeft;
+        device->RealOut.ChannelName[1] = FrontRight;
+        device->RealOut.ChannelName[2] = FrontCenter;
+        device->RealOut.ChannelName[3] = LFE;
+        device->RealOut.ChannelName[4] = SideLeft;
+        device->RealOut.ChannelName[5] = SideRight;
         break;
     case DevFmtX51Rear:
-        device->ChannelName[0] = FrontLeft;
-        device->ChannelName[1] = FrontRight;
-        device->ChannelName[2] = FrontCenter;
-        device->ChannelName[3] = LFE;
-        device->ChannelName[4] = BackLeft;
-        device->ChannelName[5] = BackRight;
+        device->RealOut.ChannelName[0] = FrontLeft;
+        device->RealOut.ChannelName[1] = FrontRight;
+        device->RealOut.ChannelName[2] = FrontCenter;
+        device->RealOut.ChannelName[3] = LFE;
+        device->RealOut.ChannelName[4] = BackLeft;
+        device->RealOut.ChannelName[5] = BackRight;
         break;
     case DevFmtX61:
-        device->ChannelName[0] = FrontLeft;
-        device->ChannelName[1] = FrontRight;
-        device->ChannelName[2] = FrontCenter;
-        device->ChannelName[3] = LFE;
-        device->ChannelName[4] = BackCenter;
-        device->ChannelName[5] = SideLeft;
-        device->ChannelName[6] = SideRight;
+        device->RealOut.ChannelName[0] = FrontLeft;
+        device->RealOut.ChannelName[1] = FrontRight;
+        device->RealOut.ChannelName[2] = FrontCenter;
+        device->RealOut.ChannelName[3] = LFE;
+        device->RealOut.ChannelName[4] = BackCenter;
+        device->RealOut.ChannelName[5] = SideLeft;
+        device->RealOut.ChannelName[6] = SideRight;
         break;
     case DevFmtX71:
-        device->ChannelName[0] = FrontLeft;
-        device->ChannelName[1] = FrontRight;
-        device->ChannelName[2] = FrontCenter;
-        device->ChannelName[3] = LFE;
-        device->ChannelName[4] = BackLeft;
-        device->ChannelName[5] = BackRight;
-        device->ChannelName[6] = SideLeft;
-        device->ChannelName[7] = SideRight;
+        device->RealOut.ChannelName[0] = FrontLeft;
+        device->RealOut.ChannelName[1] = FrontRight;
+        device->RealOut.ChannelName[2] = FrontCenter;
+        device->RealOut.ChannelName[3] = LFE;
+        device->RealOut.ChannelName[4] = BackLeft;
+        device->RealOut.ChannelName[5] = BackRight;
+        device->RealOut.ChannelName[6] = SideLeft;
+        device->RealOut.ChannelName[7] = SideRight;
+	break;
     case DevFmtXRME22:
-        device->ChannelName[0]  = FrontLeft;
-        device->ChannelName[1]  = FrontRight;
-        device->ChannelName[2]  = FrontCenter;
-        device->ChannelName[3]  = LFE;
-        device->ChannelName[4]  = BackLeft;
-        device->ChannelName[5]  = BackRight;
-        device->ChannelName[6]  = SideLeft;
-        device->ChannelName[7]  = SideRight;
-        device->ChannelName[8]  = Aux0;
-        device->ChannelName[9]  = Aux1;
-        device->ChannelName[10] = Aux2;
-        device->ChannelName[11] = Aux3;
-        device->ChannelName[12] = Aux4;
-        device->ChannelName[13] = Aux5;
-        device->ChannelName[14] = Aux6;
-        device->ChannelName[15] = Aux7;
-        device->ChannelName[16] = Aux8;
-        device->ChannelName[17] = Aux9;
-        device->ChannelName[18] = Aux10;
-        device->ChannelName[19] = Aux11;
-        device->ChannelName[20] = Aux12;
-        device->ChannelName[21] = Aux13;
+        device->RealOut.ChannelName[0]  = FrontLeft;
+        device->RealOut.ChannelName[1]  = FrontRight;
+        device->RealOut.ChannelName[2]  = FrontCenter;
+        device->RealOut.ChannelName[3]  = LFE;
+        device->RealOut.ChannelName[4]  = BackLeft;
+        device->RealOut.ChannelName[5]  = BackRight;
+        device->RealOut.ChannelName[6]  = SideLeft;
+        device->RealOut.ChannelName[7]  = SideRight;
+        device->RealOut.ChannelName[8]  = Aux0;
+        device->RealOut.ChannelName[9]  = Aux1;
+        device->RealOut.ChannelName[10] = Aux2;
+        device->RealOut.ChannelName[11] = Aux3;
+        device->RealOut.ChannelName[12] = Aux4;
+        device->RealOut.ChannelName[13] = Aux5;
+        device->RealOut.ChannelName[14] = Aux6;
+        device->RealOut.ChannelName[15] = Aux7;
+        device->RealOut.ChannelName[16] = Aux8;
+        device->RealOut.ChannelName[17] = Aux9;
+        device->RealOut.ChannelName[18] = Aux10;
+        device->RealOut.ChannelName[19] = Aux11;
+        device->RealOut.ChannelName[20] = Aux12;
+        device->RealOut.ChannelName[21] = Aux13;
         break;
     case DevFmtBFormat3D:
-        device->ChannelName[0] = BFormatW;
-        device->ChannelName[1] = BFormatX;
-        device->ChannelName[2] = BFormatY;
-        device->ChannelName[3] = BFormatZ;
+        device->RealOut.ChannelName[0] = Aux0;
+        device->RealOut.ChannelName[1] = Aux1;
+        device->RealOut.ChannelName[2] = Aux2;
+        device->RealOut.ChannelName[3] = Aux3;
         break;
     }
 }
@@ -1543,51 +1554,51 @@ void SetDefaultChannelOrder(ALCdevice *device)
     ALuint i;
 
     for(i = 0;i < MAX_OUTPUT_CHANNELS;i++)
-        device->ChannelName[i] = InvalidChannel;
+        device->RealOut.ChannelName[i] = InvalidChannel;
 
     switch(device->FmtChans)
     {
     case DevFmtX51Rear:
-        device->ChannelName[0] = FrontLeft;
-        device->ChannelName[1] = FrontRight;
-        device->ChannelName[2] = BackLeft;
-        device->ChannelName[3] = BackRight;
-        device->ChannelName[4] = FrontCenter;
-        device->ChannelName[5] = LFE;
+        device->RealOut.ChannelName[0] = FrontLeft;
+        device->RealOut.ChannelName[1] = FrontRight;
+        device->RealOut.ChannelName[2] = BackLeft;
+        device->RealOut.ChannelName[3] = BackRight;
+        device->RealOut.ChannelName[4] = FrontCenter;
+        device->RealOut.ChannelName[5] = LFE;
         return;
     case DevFmtX71:
-        device->ChannelName[0] = FrontLeft;
-        device->ChannelName[1] = FrontRight;
-        device->ChannelName[2] = BackLeft;
-        device->ChannelName[3] = BackRight;
-        device->ChannelName[4] = FrontCenter;
-        device->ChannelName[5] = LFE;
-        device->ChannelName[6] = SideLeft;
-        device->ChannelName[7] = SideRight;
+        device->RealOut.ChannelName[0] = FrontLeft;
+        device->RealOut.ChannelName[1] = FrontRight;
+        device->RealOut.ChannelName[2] = BackLeft;
+        device->RealOut.ChannelName[3] = BackRight;
+        device->RealOut.ChannelName[4] = FrontCenter;
+        device->RealOut.ChannelName[5] = LFE;
+        device->RealOut.ChannelName[6] = SideLeft;
+        device->RealOut.ChannelName[7] = SideRight;
         return;
     case DevFmtXRME22:
-        device->ChannelName[0]  = FrontLeft;
-        device->ChannelName[1]  = FrontRight;
-        device->ChannelName[2]  = FrontCenter;
-        device->ChannelName[3]  = LFE;
-        device->ChannelName[4]  = BackLeft;
-        device->ChannelName[5]  = BackRight;
-        device->ChannelName[6]  = SideLeft;
-        device->ChannelName[7]  = SideRight;
-        device->ChannelName[8]  = Aux0;
-        device->ChannelName[9]  = Aux1;
-        device->ChannelName[10] = Aux2;
-        device->ChannelName[11] = Aux3;
-        device->ChannelName[12] = Aux4;
-        device->ChannelName[13] = Aux5;
-        device->ChannelName[14] = Aux6;
-        device->ChannelName[15] = Aux7;
-        device->ChannelName[16] = Aux8;
-        device->ChannelName[17] = Aux9;
-        device->ChannelName[18] = Aux10;
-        device->ChannelName[19] = Aux11;
-        device->ChannelName[20] = Aux12;
-        device->ChannelName[21] = Aux13;
+        device->RealOut.ChannelName[0]  = FrontLeft;
+        device->RealOut.ChannelName[1]  = FrontRight;
+        device->RealOut.ChannelName[2]  = FrontCenter;
+        device->RealOut.ChannelName[3]  = LFE;
+        device->RealOut.ChannelName[4]  = BackLeft;
+        device->RealOut.ChannelName[5]  = BackRight;
+        device->RealOut.ChannelName[6]  = SideLeft;
+        device->RealOut.ChannelName[7]  = SideRight;
+        device->RealOut.ChannelName[8]  = Aux0;
+        device->RealOut.ChannelName[9]  = Aux1;
+        device->RealOut.ChannelName[10] = Aux2;
+        device->RealOut.ChannelName[11] = Aux3;
+        device->RealOut.ChannelName[12] = Aux4;
+        device->RealOut.ChannelName[13] = Aux5;
+        device->RealOut.ChannelName[14] = Aux6;
+        device->RealOut.ChannelName[15] = Aux7;
+        device->RealOut.ChannelName[16] = Aux8;
+        device->RealOut.ChannelName[17] = Aux9;
+        device->RealOut.ChannelName[18] = Aux10;
+        device->RealOut.ChannelName[19] = Aux11;
+        device->RealOut.ChannelName[20] = Aux12;
+        device->RealOut.ChannelName[21] = Aux13;
         return;
 
     /* Same as WFX order */
@@ -1602,7 +1613,7 @@ void SetDefaultChannelOrder(ALCdevice *device)
     }
 }
 
-extern inline ALint GetChannelIdxByName(const ALCdevice *device, enum Channel chan);
+extern inline ALint GetChannelIndex(const enum Channel names[MAX_OUTPUT_CHANNELS], enum Channel chan);
 
 
 /* ALCcontext_DeferUpdates
@@ -1758,11 +1769,13 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
         stype = device->FmtType;
         freq = device->Frequency;
 
+#define TRACE_ATTR(a, v) TRACE("Loopback %s = %d\n", #a, v)
         while(attrList[attrIdx])
         {
             if(attrList[attrIdx] == ALC_FORMAT_CHANNELS_SOFT)
             {
                 ALCint val = attrList[attrIdx + 1];
+                TRACE_ATTR(ALC_FORMAT_CHANNELS_SOFT, val);
                 if(!IsValidALCChannels(val) || !ChannelsFromDevFmt(val))
                     return ALC_INVALID_VALUE;
                 schans = val;
@@ -1772,6 +1785,7 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
             if(attrList[attrIdx] == ALC_FORMAT_TYPE_SOFT)
             {
                 ALCint val = attrList[attrIdx + 1];
+                TRACE_ATTR(ALC_FORMAT_TYPE_SOFT, val);
                 if(!IsValidALCType(val) || !BytesFromDevFmt(val))
                     return ALC_INVALID_VALUE;
                 stype = val;
@@ -1781,6 +1795,7 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
             if(attrList[attrIdx] == ALC_FREQUENCY)
             {
                 freq = attrList[attrIdx + 1];
+                TRACE_ATTR(ALC_FREQUENCY, freq);
                 if(freq < MIN_OUTPUT_RATE)
                     return ALC_INVALID_VALUE;
                 gotFmt |= GotFreq;
@@ -1789,6 +1804,7 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
             if(attrList[attrIdx] == ALC_STEREO_SOURCES)
             {
                 numStereo = attrList[attrIdx + 1];
+                TRACE_ATTR(ALC_STEREO_SOURCES, numStereo);
                 if(numStereo > device->MaxNoOfSources)
                     numStereo = device->MaxNoOfSources;
 
@@ -1796,10 +1812,14 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
             }
 
             if(attrList[attrIdx] == ALC_MAX_AUXILIARY_SENDS)
+            {
                 numSends = attrList[attrIdx + 1];
+                TRACE_ATTR(ALC_MAX_AUXILIARY_SENDS, numSends);
+            }
 
             if(attrList[attrIdx] == ALC_HRTF_SOFT)
             {
+                TRACE_ATTR(ALC_HRTF_SOFT, attrList[attrIdx + 1]);
                 if(attrList[attrIdx + 1] == ALC_FALSE)
                     hrtf_appreq = Hrtf_Disable;
                 else if(attrList[attrIdx + 1] == ALC_TRUE)
@@ -1809,10 +1829,14 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
             }
 
             if(attrList[attrIdx] == ALC_HRTF_ID_SOFT)
+            {
                 hrtf_id = attrList[attrIdx + 1];
+                TRACE_ATTR(ALC_HRTF_ID_SOFT, hrtf_id);
+            }
 
             attrIdx += 2;
         }
+#undef TRACE_ATTR
 
         if(gotFmt != GotAll)
         {
@@ -1852,17 +1876,20 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
         numStereo = device->NumStereoSources;
         numSends = device->NumAuxSends;
 
+#define TRACE_ATTR(a, v) TRACE("%s = %d\n", #a, v)
         while(attrList[attrIdx])
         {
             if(attrList[attrIdx] == ALC_FREQUENCY)
             {
                 freq = attrList[attrIdx + 1];
                 device->Flags |= DEVICE_FREQUENCY_REQUEST;
+                TRACE_ATTR(ALC_FREQUENCY, freq);
             }
 
             if(attrList[attrIdx] == ALC_STEREO_SOURCES)
             {
                 numStereo = attrList[attrIdx + 1];
+                TRACE_ATTR(ALC_STEREO_SOURCES, numStereo);
                 if(numStereo > device->MaxNoOfSources)
                     numStereo = device->MaxNoOfSources;
 
@@ -1870,10 +1897,14 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
             }
 
             if(attrList[attrIdx] == ALC_MAX_AUXILIARY_SENDS)
+            {
                 numSends = attrList[attrIdx + 1];
+                TRACE_ATTR(ALC_MAX_AUXILIARY_SENDS, numSends);
+            }
 
             if(attrList[attrIdx] == ALC_HRTF_SOFT)
             {
+                TRACE_ATTR(ALC_HRTF_SOFT, attrList[attrIdx + 1]);
                 if(attrList[attrIdx + 1] == ALC_FALSE)
                     hrtf_appreq = Hrtf_Disable;
                 else if(attrList[attrIdx + 1] == ALC_TRUE)
@@ -1883,10 +1914,14 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
             }
 
             if(attrList[attrIdx] == ALC_HRTF_ID_SOFT)
+            {
                 hrtf_id = attrList[attrIdx + 1];
+                TRACE_ATTR(ALC_HRTF_ID_SOFT, hrtf_id);
+            }
 
             attrIdx += 2;
         }
+#undef TRACE_ATTR
 
         ConfigValueUInt(al_string_get_cstr(device->DeviceName), NULL, "frequency", &freq);
         freq = maxu(freq, MIN_OUTPUT_RATE);
@@ -1911,11 +1946,25 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
     if((device->Flags&DEVICE_RUNNING))
         return ALC_NO_ERROR;
 
-    al_free(device->DryBuffer);
-    device->DryBuffer = NULL;
+    al_free(device->Uhj_Encoder);
+    device->Uhj_Encoder = NULL;
+
+    al_free(device->Bs2b);
+    device->Bs2b = NULL;
+
+    al_free(device->Dry.Buffer);
+    device->Dry.Buffer = NULL;
+    device->Dry.NumChannels = 0;
+    device->VirtOut.Buffer = NULL;
+    device->VirtOut.NumChannels = 0;
+    device->RealOut.Buffer = NULL;
+    device->RealOut.NumChannels = 0;
 
     UpdateClockBase(device);
 
+    /*************************************************************************
+     * Update device format request if HRTF is requested
+     */
     device->Hrtf_Status = ALC_HRTF_DISABLED_SOFT;
     if(device->Type != Loopback)
     {
@@ -1948,20 +1997,21 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
             }
             else
             {
-                hrtf_userreq = hrtf_appreq = Hrtf_Default;
+                hrtf_userreq = Hrtf_Default;
+                hrtf_appreq = Hrtf_Disable;
                 device->Hrtf_Status = ALC_HRTF_UNSUPPORTED_FORMAT_SOFT;
             }
         }
     }
     else if(hrtf_appreq == Hrtf_Enable)
     {
-        size_t i;
+        size_t i = VECTOR_SIZE(device->Hrtf_List);
         /* Loopback device. We don't need to match to a specific HRTF entry
          * here. If the requested ID matches, we'll pick that later, if not,
-         * we'll try to auto-select one anyway. */
-        if(device->FmtChans != DevFmtStereo)
-            i = VECTOR_SIZE(device->Hrtf_List);
-        else
+         * we'll try to auto-select one anyway. Just make sure one exists
+         * that'll work.
+         */
+        if(device->FmtChans == DevFmtStereo)
         {
             if(VECTOR_SIZE(device->Hrtf_List) == 0)
             {
@@ -1979,7 +2029,7 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
         {
             ERR("Requested format not HRTF compatible: %s, %uhz\n",
                 DevFmtChannelsString(device->FmtChans), device->Frequency);
-            hrtf_appreq = Hrtf_Default;
+            hrtf_appreq = Hrtf_Disable;
             device->Hrtf_Status = ALC_HRTF_UNSUPPORTED_FORMAT_SOFT;
         }
     }
@@ -2016,11 +2066,6 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
         device->Flags &= ~DEVICE_FREQUENCY_REQUEST;
     }
 
-    TRACE("Post-reset: %s, %s, %uhz, %u update size x%d\n",
-        DevFmtChannelsString(device->FmtChans), DevFmtTypeString(device->FmtType),
-        device->Frequency, device->UpdateSize, device->NumUpdates
-    );
-
     if((device->UpdateSize&3) != 0)
     {
         if((CPUCapFlags&CPU_CAP_SSE))
@@ -2029,150 +2074,53 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
             WARN("NEON performs best with multiple of 4 update sizes (%u)\n", device->UpdateSize);
     }
 
-    device->Hrtf = NULL;
-    device->Hrtf_Mode = DisabledHrtf;
-    al_string_clear(&device->Hrtf_Name);
-    if(device->FmtChans != DevFmtStereo)
-    {
-        if(hrtf_appreq == Hrtf_Enable) {
-            device->Hrtf_Status = ALC_HRTF_UNSUPPORTED_FORMAT_SOFT;
-			WARN("** hrtf_appreq says Enable, but device status is ALC_HRTF_UNSUPPORTED_FORMAT\n");
-		}
+    TRACE("Post-reset: %s, %s, %uhz, %u update size x%d\n",
+        DevFmtChannelsString(device->FmtChans), DevFmtTypeString(device->FmtType),
+        device->Frequency, device->UpdateSize, device->NumUpdates
+    );
 
-        free(device->Bs2b);
-        device->Bs2b = NULL;
-    }
-    else
-    {
-        bool headphones = device->IsHeadphones;
-        enum HrtfMode hrtf_mode = FullHrtf;
-        ALCenum hrtf_status = device->Hrtf_Status;
-        const char *mode;
-        int bs2blevel;
-        int usehrtf;
+    aluInitRenderer(device, hrtf_id, hrtf_appreq, hrtf_userreq);
 
-        if(device->Type != Loopback)
-        {
-            if(ConfigValueStr(al_string_get_cstr(device->DeviceName), NULL, "stereo-mode", &mode))
-            {
-                if(strcasecmp(mode, "headphones") == 0)
-                    headphones = true;
-                else if(strcasecmp(mode, "speakers") == 0)
-                    headphones = false;
-                else if(strcasecmp(mode, "auto") != 0)
-                    ERR("Unexpected stereo-mode: %s\n", mode);
-            }
-
-            if(ConfigValueStr(al_string_get_cstr(device->DeviceName), NULL, "hrtf-mode", &mode))
-            {
-                if(strcasecmp(mode, "full") == 0)
-                    hrtf_mode = FullHrtf;
-                else if(strcasecmp(mode, "basic") == 0)
-                    hrtf_mode = BasicHrtf;
-                else
-                    ERR("Unexpected hrtf-mode: %s\n", mode);
-            }
-        }
-
-
-        if(hrtf_userreq == Hrtf_Default)
-        {
-            usehrtf = (headphones && hrtf_appreq != Hrtf_Disable) ||
-                      (hrtf_appreq == Hrtf_Enable);
-            if(headphones && hrtf_appreq != Hrtf_Disable)
-                hrtf_status = ALC_HRTF_HEADPHONES_DETECTED_SOFT;
-            else if(usehrtf)
-                hrtf_status = ALC_HRTF_ENABLED_SOFT;
-        }
-        else
-        {
-            usehrtf = (hrtf_userreq == Hrtf_Enable);
-            if(!usehrtf)
-                hrtf_status = ALC_HRTF_DENIED_SOFT;
-            else
-                hrtf_status = ALC_HRTF_REQUIRED_SOFT;
-        }
-
-        if(!usehrtf)
-            device->Hrtf_Status = hrtf_status;
-        else
-        {
-            size_t i;
-
-            device->Hrtf_Status = ALC_HRTF_UNSUPPORTED_FORMAT_SOFT;
-            if(VECTOR_SIZE(device->Hrtf_List) == 0)
-            {
-                VECTOR_DEINIT(device->Hrtf_List);
-                device->Hrtf_List = EnumerateHrtf(device->DeviceName);
-            }
-
-            if(hrtf_id >= 0 && (size_t)hrtf_id < VECTOR_SIZE(device->Hrtf_List))
-            {
-                const HrtfEntry *entry = &VECTOR_ELEM(device->Hrtf_List, hrtf_id);
-                if(GetHrtfSampleRate(entry->hrtf) == device->Frequency)
-                {
-                    device->Hrtf = entry->hrtf;
-                    al_string_copy(&device->Hrtf_Name, entry->name);
-                }
-            }
-            if(!device->Hrtf)
-            {
-                for(i = 0;i < VECTOR_SIZE(device->Hrtf_List);i++)
-                {
-                    const HrtfEntry *entry = &VECTOR_ELEM(device->Hrtf_List, i);
-                    if(GetHrtfSampleRate(entry->hrtf) == device->Frequency)
-                    {
-                        device->Hrtf = entry->hrtf;
-                        al_string_copy(&device->Hrtf_Name, entry->name);
-                        break;
-                    }
-                }
-            }
-        }
-        if(device->Hrtf)
-        {
-            device->Hrtf_Mode = hrtf_mode;
-            device->Hrtf_Status = hrtf_status;
-            TRACE("HRTF enabled, \"%s\"\n", al_string_get_cstr(device->Hrtf_Name));
-            free(device->Bs2b);
-            device->Bs2b = NULL;
-        }
-        else
-        {
-            TRACE("HRTF disabled\n");
-
-            bs2blevel = ((headphones && hrtf_appreq != Hrtf_Disable) ||
-                         (hrtf_appreq == Hrtf_Enable)) ? 5 : 0;
-            if(device->Type != Loopback)
-                ConfigValueInt(al_string_get_cstr(device->DeviceName), NULL, "cf_level", &bs2blevel);
-            if(bs2blevel > 0 && bs2blevel <= 6)
-            {
-                if(!device->Bs2b)
-                {
-                    device->Bs2b = calloc(1, sizeof(*device->Bs2b));
-                    bs2b_clear(device->Bs2b);
-                }
-                bs2b_set_params(device->Bs2b, bs2blevel, device->Frequency);
-                TRACE("BS2B enabled\n");
-            }
-            else
-            {
-                free(device->Bs2b);
-                device->Bs2b = NULL;
-                TRACE("BS2B disabled\n");
-            }
-        }
-    }
-
-    aluInitPanning(device);
-
-    /* With HRTF, allocate two extra channels for the post-filter output. */
-    size = sizeof(device->DryBuffer[0]) * (device->NumChannels + (device->Hrtf ? 2 : 0));
-    device->DryBuffer = al_calloc(16, size);
-    if(!device->DryBuffer)
+    /* Allocate extra channels for any post-filter output. */
+    size = device->Dry.NumChannels * sizeof(device->Dry.Buffer[0]);
+    if(device->AmbiDecoder && bformatdec_getOrder(device->AmbiDecoder) >= 2)
+        size += (ChannelsFromDevFmt(device->FmtChans)+4) * sizeof(device->Dry.Buffer[0]);
+    else if(device->Hrtf || device->Uhj_Encoder || device->AmbiDecoder)
+        size += ChannelsFromDevFmt(device->FmtChans) * sizeof(device->Dry.Buffer[0]);
+    device->Dry.Buffer = al_calloc(16, size);
+    if(!device->Dry.Buffer)
     {
         ERR("Failed to allocate "SZFMT" bytes for mix buffer\n", size);
         return ALC_INVALID_DEVICE;
+    }
+
+    if(device->Hrtf || device->Uhj_Encoder || device->AmbiDecoder)
+    {
+        device->VirtOut.Buffer = device->Dry.Buffer;
+        device->VirtOut.NumChannels = device->Dry.NumChannels;
+        device->RealOut.Buffer = device->Dry.Buffer + device->Dry.NumChannels;
+        device->RealOut.NumChannels = ChannelsFromDevFmt(device->FmtChans);
+    }
+    else
+    {
+        device->VirtOut.Buffer = NULL;
+        device->VirtOut.NumChannels = 0;
+        device->RealOut.Buffer = device->Dry.Buffer;
+        device->RealOut.NumChannels = device->Dry.NumChannels;
+    }
+
+    if(device->AmbiDecoder && bformatdec_getOrder(device->AmbiDecoder) >= 2)
+    {
+        /* Higher-order high quality decoding requires upsampling first-order
+         * content, so make sure to mix it separately.
+         */
+        device->FOAOut.Buffer = device->RealOut.Buffer + device->RealOut.NumChannels;
+        device->FOAOut.NumChannels = 4;
+    }
+    else
+    {
+        device->FOAOut.Buffer = device->Dry.Buffer;
+        device->FOAOut.NumChannels = device->Dry.NumChannels;
     }
 
     SetMixerFPUMode(&oldMode);
@@ -2188,6 +2136,8 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
         {
             ALeffectslot *slot = context->EffectSlotMap.array[pos].value;
 
+            slot->EffectState->OutBuffer = device->Dry.Buffer;
+            slot->EffectState->OutChannels = device->Dry.NumChannels;
             if(V(slot->EffectState,deviceUpdate)(device) == AL_FALSE)
             {
                 UnlockUIntMapRead(&context->EffectSlotMap);
@@ -2235,8 +2185,11 @@ static ALCenum UpdateDeviceParams(ALCdevice *device, const ALCint *attrList)
     if(device->DefaultSlot)
     {
         ALeffectslot *slot = device->DefaultSlot;
+        ALeffectState *state = slot->EffectState;
 
-        if(V(slot->EffectState,deviceUpdate)(device) == AL_FALSE)
+        state->OutBuffer = device->Dry.Buffer;
+        state->OutChannels = device->Dry.NumChannels;
+        if(V(state,deviceUpdate)(device) == AL_FALSE)
         {
             V0(device->Backend,unlock)();
             RestoreFPUMode(&oldMode);
@@ -2302,13 +2255,24 @@ static ALCvoid FreeDevice(ALCdevice *device)
     AL_STRING_DEINIT(device->Hrtf_Name);
     FreeHrtfList(&device->Hrtf_List);
 
-    free(device->Bs2b);
+    al_free(device->Bs2b);
     device->Bs2b = NULL;
+
+    al_free(device->Uhj_Encoder);
+    device->Uhj_Encoder = NULL;
+
+    bformatdec_free(device->AmbiDecoder);
+    device->AmbiDecoder = NULL;
 
     AL_STRING_DEINIT(device->DeviceName);
 
-    al_free(device->DryBuffer);
-    device->DryBuffer = NULL;
+    al_free(device->Dry.Buffer);
+    device->Dry.Buffer = NULL;
+    device->Dry.NumChannels = 0;
+    device->VirtOut.Buffer = NULL;
+    device->VirtOut.NumChannels = 0;
+    device->RealOut.Buffer = NULL;
+    device->RealOut.NumChannels = 0;
 
     al_free(device);
 }
@@ -3403,11 +3367,17 @@ ALC_API ALCdevice* ALC_APIENTRY alcOpenDevice(const ALCchar *deviceName)
 
     device->Flags = 0;
     device->Bs2b = NULL;
+    device->Uhj_Encoder = NULL;
     VECTOR_INIT(device->Hrtf_List);
     AL_STRING_INIT(device->Hrtf_Name);
-    device->Hrtf_Mode = DisabledHrtf;
+    device->Render_Mode = NormalRender;
     AL_STRING_INIT(device->DeviceName);
-    device->DryBuffer = NULL;
+    device->Dry.Buffer = NULL;
+    device->Dry.NumChannels = 0;
+    device->VirtOut.Buffer = NULL;
+    device->VirtOut.NumChannels = 0;
+    device->RealOut.Buffer = NULL;
+    device->RealOut.NumChannels = 0;
 
     ATOMIC_INIT(&device->ContextList, NULL);
 
@@ -3665,7 +3635,12 @@ ALC_API ALCdevice* ALC_APIENTRY alcCaptureOpenDevice(const ALCchar *deviceName, 
     AL_STRING_INIT(device->Hrtf_Name);
 
     AL_STRING_INIT(device->DeviceName);
-    device->DryBuffer = NULL;
+    device->Dry.Buffer = NULL;
+    device->Dry.NumChannels = 0;
+    device->VirtOut.Buffer = NULL;
+    device->VirtOut.NumChannels = 0;
+    device->RealOut.Buffer = NULL;
+    device->RealOut.NumChannels = 0;
 
     InitUIntMap(&device->BufferMap, ~0);
     InitUIntMap(&device->EffectMap, ~0);
@@ -3852,9 +3827,15 @@ ALC_API ALCdevice* ALC_APIENTRY alcLoopbackOpenDeviceSOFT(const ALCchar *deviceN
     VECTOR_INIT(device->Hrtf_List);
     AL_STRING_INIT(device->Hrtf_Name);
     device->Bs2b = NULL;
-    device->Hrtf_Mode = DisabledHrtf;
+    device->Uhj_Encoder = NULL;
+    device->Render_Mode = NormalRender;
     AL_STRING_INIT(device->DeviceName);
-    device->DryBuffer = NULL;
+    device->Dry.Buffer = NULL;
+    device->Dry.NumChannels = 0;
+    device->VirtOut.Buffer = NULL;
+    device->VirtOut.NumChannels = 0;
+    device->RealOut.Buffer = NULL;
+    device->RealOut.NumChannels = 0;
 
     ATOMIC_INIT(&device->ContextList, NULL);
 

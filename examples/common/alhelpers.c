@@ -317,7 +317,6 @@ ALsizei FramesToBytes(ALsizei size, ALenum channels, ALenum type)
     case AL_5POINT1_SOFT: size *= 6; break;
     case AL_6POINT1_SOFT: size *= 7; break;
     case AL_7POINT1_SOFT: size *= 8; break;
-    // case AL_RME22_SOFT:   size *= 16; break;
     case AL_RME22_SOFT:   size *= 22; break;
     }
 

@@ -34,6 +34,8 @@
 #include "alu.h"
 #include "bs2b.h"
 #include "hrtf.h"
+#include "uhjfilter.h"
+#include "bformatdec.h"
 #include "static_assert.h"
 
 #include "mixer_defs.h"
@@ -99,29 +101,6 @@ extern inline void aluMatrixdSet(aluMatrixd *matrix,
                                  ALdouble m20, ALdouble m21, ALdouble m22, ALdouble m23,
                                  ALdouble m30, ALdouble m31, ALdouble m32, ALdouble m33);
 
-
-/* NOTE: HRTF is set up a bit special in the device. By default, the device's
- * DryBuffer, NumChannels, ChannelName, and Channel fields correspond to the
- * output mixing format, and the DryBuffer is then converted and written to the
- * backend's audio buffer.
- *
- * With HRTF, these fields correspond to a virtual format (typically B-Format),
- * and the actual output is stored in DryBuffer[NumChannels] for the left
- * channel and DryBuffer[NumChannels+1] for the right. As a final output step,
- * the virtual channels will have HRTF applied and written to the actual
- * output. Things like effects and B-Format decoding will want to write to the
- * virtual channels so that they can be mixed with HRTF in full 3D.
- *
- * Sources that get mixed using HRTF directly (or that want to skip HRTF
- * completely) will need to offset the output buffer so that they skip the
- * virtual output and write to the actual output channels. This is the reason
- * you'll see
- *
- * voice->Direct.OutBuffer += voice->Direct.OutChannels;
- * voice->Direct.OutChannels = 2;
- *
- * at various points in the code where HRTF is explicitly used or bypassed.
- */
 
 static inline HrtfMixerFunc SelectHrtfMixer(void)
 {
@@ -324,12 +303,6 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
 {
     static const struct ChanMap MonoMap[1] = {
         { FrontCenter, 0.0f, 0.0f }
-    }, StereoMap[2] = {
-        { FrontLeft,  DEG2RAD(-30.0f), DEG2RAD(0.0f) },
-        { FrontRight, DEG2RAD( 30.0f), DEG2RAD(0.0f) }
-    }, StereoWideMap[2] = {
-        { FrontLeft,  DEG2RAD(-90.0f), DEG2RAD(0.0f) },
-        { FrontRight, DEG2RAD( 90.0f), DEG2RAD(0.0f) }
     }, RearMap[2] = {
         { BackLeft,  DEG2RAD(-150.0f), DEG2RAD(0.0f) },
         { BackRight, DEG2RAD( 150.0f), DEG2RAD(0.0f) }
@@ -399,6 +372,10 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
     ALuint NumSends, Frequency;
     ALboolean Relative;
     const struct ChanMap *chans = NULL;
+    struct ChanMap StereoMap[2] = {
+        { FrontLeft,  DEG2RAD(-30.0f), DEG2RAD(0.0f) },
+        { FrontRight, DEG2RAD( 30.0f), DEG2RAD(0.0f) }
+    };
     ALuint num_channels = 0;
     ALboolean DirectChannels;
     ALboolean isbformat = AL_FALSE;
@@ -420,8 +397,12 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
     Relative        = ALSource->HeadRelative;
     DirectChannels  = ALSource->DirectChannels;
 
-    voice->Direct.OutBuffer = Device->DryBuffer;
-    voice->Direct.OutChannels = Device->NumChannels;
+    /* Convert counter-clockwise to clockwise. */
+    StereoMap[0].angle = -ALSource->StereoPan[0];
+    StereoMap[1].angle = -ALSource->StereoPan[1];
+
+    voice->Direct.OutBuffer = Device->Dry.Buffer;
+    voice->Direct.OutChannels = Device->Dry.NumChannels;
     for(i = 0;i < NumSends;i++)
     {
         SendSlots[i] = ALSource->Send[i].Slot;
@@ -482,13 +463,7 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
         break;
 
     case FmtStereo:
-        /* HACK: Place the stereo channels at +/-90 degrees when using non-
-         * HRTF stereo output. This helps reduce the "monoization" caused
-         * by them panning towards the center. */
-        if(Device->FmtChans == DevFmtStereo && !Device->Hrtf)
-            chans = StereoWideMap;
-        else
-            chans = StereoMap;
+        chans = StereoMap;
         num_channels = 2;
         break;
 
@@ -560,10 +535,8 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
         aluCrossproduct(N, V, U);
         aluNormalize(U);
 
-        /* Build a rotate + conversion matrix (B-Format -> N3D), and include
-         * scaling for first-order content on second- or third-order output.
-         */
-        scale = Device->AmbiScale * 1.732050808f;
+        /* Build a rotate + conversion matrix (B-Format -> N3D). */
+        scale = 1.732050808f;
         aluMatrixfSet(&matrix,
             1.414213562f,        0.0f,        0.0f,        0.0f,
                     0.0f, -N[0]*scale,  N[1]*scale, -N[2]*scale,
@@ -571,18 +544,12 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
                     0.0f, -V[0]*scale,  V[1]*scale, -V[2]*scale
         );
 
+        voice->Direct.OutBuffer = Device->FOAOut.Buffer;
+        voice->Direct.OutChannels = Device->FOAOut.NumChannels;
         for(c = 0;c < num_channels;c++)
-            ComputeFirstOrderGains(Device->AmbiCoeffs, Device->NumChannels, matrix.m[c], DryGain,
+            ComputeFirstOrderGains(Device->FOAOut, matrix.m[c], DryGain,
                                    voice->Direct.Gains[c].Target);
 
-        /* Rebuild the matrix, without the second- or third-order output
-         * scaling (effects take first-order content, and will do the scaling
-         * themselves when mixing to the output).
-         */
-        scale = 1.732050808f;
-        aluMatrixfSetRow(&matrix, 1, 0.0f, -N[0]*scale,  N[1]*scale, -N[2]*scale);
-        aluMatrixfSetRow(&matrix, 2, 0.0f,  U[0]*scale, -U[1]*scale,  U[2]*scale);
-        aluMatrixfSetRow(&matrix, 3, 0.0f, -V[0]*scale,  V[1]*scale, -V[2]*scale);
         for(i = 0;i < NumSends;i++)
         {
             if(!SendSlots[i])
@@ -598,8 +565,8 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
                 for(c = 0;c < num_channels;c++)
                 {
                     const ALeffectslot *Slot = SendSlots[i];
-                    ComputeFirstOrderGains(Slot->AmbiCoeffs, Slot->NumChannels, matrix.m[c],
-                                           WetGain[i], voice->Send[i].Gains[c].Target);
+                    ComputeFirstOrderGainsBF(Slot->ChanMap, Slot->NumChannels, matrix.m[c],
+                                             WetGain[i], voice->Send[i].Gains[c].Target);
                 }
             }
         }
@@ -612,31 +579,15 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
 
         if(DirectChannels)
         {
-            if(Device->Hrtf)
-            {
-                /* DirectChannels with HRTF enabled. Skip the virtual channels
-                 * and write FrontLeft and FrontRight inputs to the first and
-                 * second outputs.
-                 */
-                voice->Direct.OutBuffer += voice->Direct.OutChannels;
-                voice->Direct.OutChannels = 2;
-                for(c = 0;c < num_channels;c++)
-                {
-                    for(j = 0;j < MAX_OUTPUT_CHANNELS;j++)
-                        voice->Direct.Gains[c].Target[j] = 0.0f;
-
-                    if(chans[c].channel == FrontLeft)
-                        voice->Direct.Gains[c].Target[0] = DryGain;
-                    else if(chans[c].channel == FrontRight)
-                        voice->Direct.Gains[c].Target[1] = DryGain;
-                }
-            }
-            else for(c = 0;c < num_channels;c++)
+            /* Skip the virtual channels and write inputs to the real output. */
+            voice->Direct.OutBuffer = Device->RealOut.Buffer;
+            voice->Direct.OutChannels = Device->RealOut.NumChannels;
+            for(c = 0;c < num_channels;c++)
             {
                 int idx;
                 for(j = 0;j < MAX_OUTPUT_CHANNELS;j++)
                     voice->Direct.Gains[c].Target[j] = 0.0f;
-                if((idx=GetChannelIdxByName(Device, chans[c].channel)) != -1)
+                if((idx=GetChannelIdxByName(Device->RealOut, chans[c].channel)) != -1)
                     voice->Direct.Gains[c].Target[idx] = DryGain;
             }
 
@@ -644,7 +595,7 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
              * channel-match. */
             for(c = 0;c < num_channels;c++)
             {
-                CalcAngleCoeffs(chans[c].angle, chans[c].elevation, coeffs);
+                CalcAngleCoeffs(chans[c].angle, chans[c].elevation, 0.0f, coeffs);
 
                 for(i = 0;i < NumSends;i++)
                 {
@@ -656,21 +607,21 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
                     else
                     {
                         const ALeffectslot *Slot = SendSlots[i];
-                        ComputePanningGains(Slot->AmbiCoeffs, Slot->NumChannels, coeffs,
-                                            WetGain[i], voice->Send[i].Gains[c].Target);
+                        ComputePanningGainsBF(Slot->ChanMap, Slot->NumChannels, coeffs,
+                                              WetGain[i], voice->Send[i].Gains[c].Target);
                     }
                 }
             }
 
             voice->IsHrtf = AL_FALSE;
         }
-        else if(Device->Hrtf_Mode == FullHrtf)
+        else if(Device->Render_Mode == HrtfRender)
         {
             /* Full HRTF rendering. Skip the virtual channels and render each
              * input channel to the real outputs.
              */
-            voice->Direct.OutBuffer += voice->Direct.OutChannels;
-            voice->Direct.OutChannels = 2;
+            voice->Direct.OutBuffer = Device->RealOut.Buffer;
+            voice->Direct.OutChannels = Device->RealOut.NumChannels;
             for(c = 0;c < num_channels;c++)
             {
                 if(chans[c].channel == LFE)
@@ -695,13 +646,13 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
 
                 /* Get the static HRIR coefficients and delays for this channel. */
                 GetLerpedHrtfCoeffs(Device->Hrtf,
-                    chans[c].elevation, chans[c].angle, 1.0f, DryGain,
+                    chans[c].elevation, chans[c].angle, 0.0f, DryGain,
                     voice->Direct.Hrtf[c].Target.Coeffs,
                     voice->Direct.Hrtf[c].Target.Delay
                 );
 
                 /* Normal panning for auxiliary sends. */
-                CalcAngleCoeffs(chans[c].angle, chans[c].elevation, coeffs);
+                CalcAngleCoeffs(chans[c].angle, chans[c].elevation, 0.0f, coeffs);
 
                 for(i = 0;i < NumSends;i++)
                 {
@@ -713,8 +664,8 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
                     else
                     {
                         const ALeffectslot *Slot = SendSlots[i];
-                        ComputePanningGains(Slot->AmbiCoeffs, Slot->NumChannels, coeffs,
-                                            WetGain[i], voice->Send[i].Gains[c].Target);
+                        ComputePanningGainsBF(Slot->ChanMap, Slot->NumChannels, coeffs,
+                                              WetGain[i], voice->Send[i].Gains[c].Target);
                     }
                 }
             }
@@ -723,17 +674,20 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
         }
         else
         {
-            /* Basic or no HRTF rendering. Use normal panning to the output. */
+            /* Non-HRTF rendering. Use normal panning to the output. */
             for(c = 0;c < num_channels;c++)
             {
                 /* Special-case LFE */
                 if(chans[c].channel == LFE)
                 {
-                    int idx;
                     for(j = 0;j < MAX_OUTPUT_CHANNELS;j++)
                         voice->Direct.Gains[c].Target[j] = 0.0f;
-                    if((idx=GetChannelIdxByName(Device, chans[c].channel)) != -1)
-                        voice->Direct.Gains[c].Target[idx] = DryGain;
+                    if(Device->Dry.Buffer == Device->RealOut.Buffer)
+                    {
+                        int idx;
+                        if((idx=GetChannelIdxByName(Device->RealOut, chans[c].channel)) != -1)
+                            voice->Direct.Gains[c].Target[idx] = DryGain;
+                    }
 
                     for(i = 0;i < NumSends;i++)
                     {
@@ -744,9 +698,24 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
                     continue;
                 }
 
-                CalcAngleCoeffs(chans[c].angle, chans[c].elevation, coeffs);
+                if(Device->Render_Mode == StereoPair)
+                {
+                    /* Clamp X so it remains within 30 degrees of 0 or 180 degree azimuth. */
+                    ALfloat x = sinf(chans[c].angle) * cosf(chans[c].elevation);
+                    coeffs[0] = clampf(-x, -0.5f, 0.5f) + 0.5f;
+                    voice->Direct.Gains[c].Target[0] = coeffs[0] * DryGain;
+                    voice->Direct.Gains[c].Target[1] = (1.0f-coeffs[0]) * DryGain;
+                    for(j = 2;j < MAX_OUTPUT_CHANNELS;j++)
+                        voice->Direct.Gains[c].Target[j] = 0.0f;
 
-                ComputePanningGains(Device->AmbiCoeffs, Device->NumChannels, coeffs, DryGain, voice->Direct.Gains[c].Target);
+                    CalcAngleCoeffs(chans[c].angle, chans[c].elevation, 0.0f, coeffs);
+                }
+                else
+                {
+                    CalcAngleCoeffs(chans[c].angle, chans[c].elevation, 0.0f, coeffs);
+                    ComputePanningGains(Device->Dry, coeffs, DryGain,
+                                        voice->Direct.Gains[c].Target);
+                }
 
                 for(i = 0;i < NumSends;i++)
                 {
@@ -759,8 +728,8 @@ ALvoid CalcNonAttnSourceParams(ALvoice *voice, const ALsource *ALSource, const A
                     else
                     {
                         const ALeffectslot *Slot = SendSlots[i];
-                        ComputePanningGains(Slot->AmbiCoeffs, Slot->NumChannels, coeffs,
-                                            WetGain[i], voice->Send[i].Gains[c].Target);
+                        ComputePanningGainsBF(Slot->ChanMap, Slot->NumChannels, coeffs,
+                                              WetGain[i], voice->Send[i].Gains[c].Target);
                     }
                 }
             }
@@ -881,8 +850,8 @@ ALvoid CalcSourceParams(ALvoice *voice, const ALsource *ALSource, const ALCconte
     WetGainHFAuto   = ALSource->WetGainHFAuto;
     RoomRolloffBase = ALSource->RoomRolloffFactor;
 
-    voice->Direct.OutBuffer = Device->DryBuffer;
-    voice->Direct.OutChannels = Device->NumChannels;
+    voice->Direct.OutBuffer = Device->Dry.Buffer;
+    voice->Direct.OutChannels = Device->Dry.NumChannels;
     for(i = 0;i < NumSends;i++)
     {
         SendSlots[i] = ALSource->Send[i].Slot;
@@ -1142,50 +1111,44 @@ ALvoid CalcSourceParams(ALvoice *voice, const ALsource *ALSource, const ALCconte
         BufferListItem = BufferListItem->next;
     }
 
-    if(Device->Hrtf_Mode == FullHrtf)
+    if(Device->Render_Mode == HrtfRender)
     {
         /* Full HRTF rendering. Skip the virtual channels and render to the
          * real outputs.
          */
-        aluVector dir = {{ 0.0f, 0.0f, -1.0f, 0.0f }};
+        ALfloat dir[3] = { 0.0f, 0.0f, -1.0f };
         ALfloat ev = 0.0f, az = 0.0f;
         ALfloat radius = ALSource->Radius;
-        ALfloat dirfact = 1.0f;
         ALfloat coeffs[MAX_AMBI_COEFFS];
+        ALfloat spread = 0.0f;
 
-        voice->Direct.OutBuffer += voice->Direct.OutChannels;
-        voice->Direct.OutChannels = 2;
+        voice->Direct.OutBuffer = Device->RealOut.Buffer;
+        voice->Direct.OutChannels = Device->RealOut.NumChannels;
 
         if(Distance > FLT_EPSILON)
         {
-            dir.v[0] = -SourceToListener.v[0];
-            dir.v[1] = -SourceToListener.v[1];
-            dir.v[2] = -SourceToListener.v[2] * ZScale;
+            dir[0] = -SourceToListener.v[0];
+            dir[1] = -SourceToListener.v[1];
+            dir[2] = -SourceToListener.v[2] * ZScale;
 
             /* Calculate elevation and azimuth only when the source is not at
              * the listener. This prevents +0 and -0 Z from producing
              * inconsistent panning. Also, clamp Y in case FP precision errors
              * cause it to land outside of -1..+1. */
-            ev = asinf(clampf(dir.v[1], -1.0f, 1.0f));
-            az = atan2f(dir.v[0], -dir.v[2]);
+            ev = asinf(clampf(dir[1], -1.0f, 1.0f));
+            az = atan2f(dir[0], -dir[2]);
         }
-        if(radius > 0.0f)
-        {
-            if(radius >= Distance)
-                dirfact *= Distance / radius * 0.5f;
-            else
-                dirfact *= 1.0f - (asinf(radius / Distance) / F_PI);
-        }
+        if(radius > Distance)
+            spread = F_TAU - Distance/radius*F_PI;
+        else if(Distance > FLT_EPSILON)
+            spread = asinf(radius / Distance) * 2.0f;
 
         /* Get the HRIR coefficients and delays. */
-        GetLerpedHrtfCoeffs(Device->Hrtf, ev, az, dirfact, DryGain,
+        GetLerpedHrtfCoeffs(Device->Hrtf, ev, az, spread, DryGain,
                             voice->Direct.Hrtf[0].Target.Coeffs,
                             voice->Direct.Hrtf[0].Target.Delay);
 
-        dir.v[0] *= dirfact;
-        dir.v[1] *= dirfact;
-        dir.v[2] *= dirfact;
-        CalcDirectionCoeffs(dir.v, coeffs);
+        CalcDirectionCoeffs(dir, spread, coeffs);
 
         for(i = 0;i < NumSends;i++)
         {
@@ -1198,8 +1161,8 @@ ALvoid CalcSourceParams(ALvoice *voice, const ALsource *ALSource, const ALCconte
             else
             {
                 const ALeffectslot *Slot = SendSlots[i];
-                ComputePanningGains(Slot->AmbiCoeffs, Slot->NumChannels, coeffs,
-                                    WetGain[i], voice->Send[i].Gains[0].Target);
+                ComputePanningGainsBF(Slot->ChanMap, Slot->NumChannels, coeffs,
+                                      WetGain[i], voice->Send[i].Gains[0].Target);
             }
         }
 
@@ -1207,10 +1170,11 @@ ALvoid CalcSourceParams(ALvoice *voice, const ALsource *ALSource, const ALCconte
     }
     else
     {
-        /* Basic or no HRTF rendering. Use normal panning to the output. */
+        /* Non-HRTF rendering. */
         ALfloat dir[3] = { 0.0f, 0.0f, -1.0f };
         ALfloat radius = ALSource->Radius;
         ALfloat coeffs[MAX_AMBI_COEFFS];
+        ALfloat spread = 0.0f;
 
         /* Get the localized direction, and compute panned gains. */
         if(Distance > FLT_EPSILON)
@@ -1219,21 +1183,28 @@ ALvoid CalcSourceParams(ALvoice *voice, const ALsource *ALSource, const ALCconte
             dir[1] = -SourceToListener.v[1];
             dir[2] = -SourceToListener.v[2] * ZScale;
         }
-        if(radius > 0.0f)
-        {
-            ALfloat dirfact;
-            if(radius >= Distance)
-                dirfact = Distance / radius * 0.5f;
-            else
-                dirfact = 1.0f - (asinf(radius / Distance) / F_PI);
-            dir[0] *= dirfact;
-            dir[1] *= dirfact;
-            dir[2] *= dirfact;
-        }
-        CalcDirectionCoeffs(dir, coeffs);
+        if(radius > Distance)
+            spread = F_TAU - Distance/radius*F_PI;
+        else if(Distance > FLT_EPSILON)
+            spread = asinf(radius / Distance) * 2.0f;
 
-        ComputePanningGains(Device->AmbiCoeffs, Device->NumChannels, coeffs, DryGain,
-                            voice->Direct.Gains[0].Target);
+        if(Device->Render_Mode == StereoPair)
+        {
+            /* Clamp X so it remains within 30 degrees of 0 or 180 degree azimuth. */
+            ALfloat x = -dir[0] * (0.5f * (cosf(spread*0.5f) + 1.0f));
+            x = clampf(x, -0.5f, 0.5f) + 0.5f;
+            voice->Direct.Gains[0].Target[0] = x * DryGain;
+            voice->Direct.Gains[0].Target[1] = (1.0f-x) * DryGain;
+            for(i = 2;i < MAX_OUTPUT_CHANNELS;i++)
+                voice->Direct.Gains[0].Target[i] = 0.0f;
+
+            CalcDirectionCoeffs(dir, spread, coeffs);
+        }
+        else
+        {
+            CalcDirectionCoeffs(dir, spread, coeffs);
+            ComputePanningGains(Device->Dry, coeffs, DryGain, voice->Direct.Gains[0].Target);
+        }
 
         for(i = 0;i < NumSends;i++)
         {
@@ -1246,8 +1217,8 @@ ALvoid CalcSourceParams(ALvoice *voice, const ALsource *ALSource, const ALCconte
             else
             {
                 const ALeffectslot *Slot = SendSlots[i];
-                ComputePanningGains(Slot->AmbiCoeffs, Slot->NumChannels, coeffs,
-                                    WetGain[i], voice->Send[i].Gains[0].Target);
+                ComputePanningGainsBF(Slot->ChanMap, Slot->NumChannels, coeffs,
+                                      WetGain[i], voice->Send[i].Gains[0].Target);
             }
         }
 
@@ -1401,26 +1372,16 @@ ALvoid aluMixData(ALCdevice *device, ALvoid *buffer, ALsizei size)
 
     while(size > 0)
     {
-        ALfloat (*OutBuffer)[BUFFERSIZE];
-        ALuint OutChannels;
-
         IncrementRef(&device->MixCount);
 
-        OutBuffer = device->DryBuffer;
-        OutChannels = device->NumChannels;
-
         SamplesToDo = minu(size, BUFFERSIZE);
-        for(c = 0;c < OutChannels;c++)
-            memset(OutBuffer[c], 0, SamplesToDo*sizeof(ALfloat));
-        if(device->Hrtf)
-        {
-            /* Set OutBuffer/OutChannels to correspond to the actual output
-             * with HRTF. Make sure to clear them too. */
-            OutBuffer += OutChannels;
-            OutChannels = 2;
-            for(c = 0;c < OutChannels;c++)
-                memset(OutBuffer[c], 0, SamplesToDo*sizeof(ALfloat));
-        }
+        for(c = 0;c < device->VirtOut.NumChannels;c++)
+            memset(device->VirtOut.Buffer[c], 0, SamplesToDo*sizeof(ALfloat));
+        for(c = 0;c < device->RealOut.NumChannels;c++)
+            memset(device->RealOut.Buffer[c], 0, SamplesToDo*sizeof(ALfloat));
+        if(device->Dry.Buffer != device->FOAOut.Buffer)
+            for(c = 0;c < device->FOAOut.NumChannels;c++)
+                memset(device->FOAOut.Buffer[c], 0, SamplesToDo*sizeof(ALfloat));
 
         V0(device->Backend,lock)();
 
@@ -1473,8 +1434,8 @@ ALvoid aluMixData(ALCdevice *device, ALvoid *buffer, ALsizei size)
             {
                 const ALeffectslot *slot = VECTOR_ELEM(ctx->ActiveAuxSlots, i);
                 ALeffectState *state = slot->EffectState;
-                V(state,process)(SamplesToDo, slot->WetBuffer, device->DryBuffer,
-                                 device->NumChannels);
+                V(state,process)(SamplesToDo, slot->WetBuffer, state->OutBuffer,
+                                 state->OutChannels);
             }
 
             ctx = ctx->next;
@@ -1484,8 +1445,8 @@ ALvoid aluMixData(ALCdevice *device, ALvoid *buffer, ALsizei size)
         {
             const ALeffectslot *slot = device->DefaultSlot;
             ALeffectState *state = slot->EffectState;
-            V(state,process)(SamplesToDo, slot->WetBuffer, device->DryBuffer,
-                             device->NumChannels);
+            V(state,process)(SamplesToDo, slot->WetBuffer, state->OutBuffer,
+                             state->OutChannels);
         }
 
         /* Increment the clock time. Every second's worth of samples is
@@ -1499,36 +1460,73 @@ ALvoid aluMixData(ALCdevice *device, ALvoid *buffer, ALsizei size)
 
         if(device->Hrtf)
         {
-            HrtfMixerFunc HrtfMix = SelectHrtfMixer();
-            ALuint irsize = GetHrtfIrSize(device->Hrtf);
-            MixHrtfParams hrtfparams;
-            memset(&hrtfparams, 0, sizeof(hrtfparams));
-            for(c = 0;c < device->NumChannels;c++)
+            int lidx = GetChannelIdxByName(device->RealOut, FrontLeft);
+            int ridx = GetChannelIdxByName(device->RealOut, FrontRight);
+            if(lidx != -1 && ridx != -1)
             {
-                hrtfparams.Current = &device->Hrtf_Params[c];
-                hrtfparams.Target = &device->Hrtf_Params[c];
-                HrtfMix(OutBuffer, device->DryBuffer[c], 0, device->Hrtf_Offset,
-                    0, irsize, &hrtfparams, &device->Hrtf_State[c], SamplesToDo
-                );
+                HrtfMixerFunc HrtfMix = SelectHrtfMixer();
+                ALuint irsize = GetHrtfIrSize(device->Hrtf);
+                MixHrtfParams hrtfparams;
+                memset(&hrtfparams, 0, sizeof(hrtfparams));
+                for(c = 0;c < device->VirtOut.NumChannels;c++)
+                {
+                    hrtfparams.Current = &device->Hrtf_Params[c];
+                    hrtfparams.Target = &device->Hrtf_Params[c];
+                    HrtfMix(device->RealOut.Buffer, lidx, ridx,
+                        device->VirtOut.Buffer[c], 0, device->Hrtf_Offset, 0,
+                        irsize, &hrtfparams, &device->Hrtf_State[c], SamplesToDo
+                    );
+                }
+                device->Hrtf_Offset += SamplesToDo;
             }
-            device->Hrtf_Offset += SamplesToDo;
         }
-        else if(device->Bs2b)
+        else if(device->AmbiDecoder)
         {
-            /* Apply binaural/crossfeed filter */
-            for(i = 0;i < SamplesToDo;i++)
+            if(device->VirtOut.Buffer != device->FOAOut.Buffer)
+                bformatdec_upSample(device->AmbiDecoder,
+                    device->VirtOut.Buffer, device->FOAOut.Buffer,
+                    device->FOAOut.NumChannels, SamplesToDo
+                );
+            bformatdec_process(device->AmbiDecoder,
+                device->RealOut.Buffer, device->RealOut.NumChannels,
+                device->VirtOut.Buffer, SamplesToDo
+            );
+        }
+        else
+        {
+            if(device->Uhj_Encoder)
             {
-                float samples[2];
-                samples[0] = device->DryBuffer[0][i];
-                samples[1] = device->DryBuffer[1][i];
-                bs2b_cross_feed(device->Bs2b, samples);
-                device->DryBuffer[0][i] = samples[0];
-                device->DryBuffer[1][i] = samples[1];
+                int lidx = GetChannelIdxByName(device->RealOut, FrontLeft);
+                int ridx = GetChannelIdxByName(device->RealOut, FrontRight);
+                if(lidx != -1 && ridx != -1)
+                {
+                    /* Encode to stereo-compatible 2-channel UHJ output. */
+                    EncodeUhj2(device->Uhj_Encoder,
+                        device->RealOut.Buffer[lidx], device->RealOut.Buffer[ridx],
+                        device->VirtOut.Buffer, SamplesToDo
+                    );
+                }
+            }
+            if(device->Bs2b)
+            {
+                /* Apply binaural/crossfeed filter */
+                for(i = 0;i < SamplesToDo;i++)
+                {
+                    float samples[2];
+                    samples[0] = device->RealOut.Buffer[0][i];
+                    samples[1] = device->RealOut.Buffer[1][i];
+                    bs2b_cross_feed(device->Bs2b, samples);
+                    device->RealOut.Buffer[0][i] = samples[0];
+                    device->RealOut.Buffer[1][i] = samples[1];
+                }
             }
         }
 
         if(buffer)
         {
+            ALfloat (*OutBuffer)[BUFFERSIZE] = device->RealOut.Buffer;
+            ALuint OutChannels = device->RealOut.NumChannels;
+
 #define WRITE(T, a, b, c, d) do {               \
     Write_##T((a), (b), (c), (d));              \
     buffer = (T*)buffer + (c)*(d);              \

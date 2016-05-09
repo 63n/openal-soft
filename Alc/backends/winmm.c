@@ -83,7 +83,7 @@ static void ProbePlaybackDevices(void)
 
 #define MATCH_ENTRY(i) (al_string_cmp(dname, *(i)) == 0)
                 VECTOR_FIND_IF(iter, const al_string, PlaybackDevices, MATCH_ENTRY);
-                if(iter == VECTOR_ITER_END(PlaybackDevices)) break;
+                if(iter == VECTOR_END(PlaybackDevices)) break;
 #undef MATCH_ENTRY
             }
 
@@ -126,7 +126,7 @@ static void ProbeCaptureDevices(void)
 
 #define MATCH_ENTRY(i) (al_string_cmp(dname, *(i)) == 0)
                 VECTOR_FIND_IF(iter, const al_string, CaptureDevices, MATCH_ENTRY);
-                if(iter == VECTOR_ITER_END(CaptureDevices)) break;
+                if(iter == VECTOR_END(CaptureDevices)) break;
 #undef MATCH_ENTRY
             }
 
@@ -258,11 +258,11 @@ static ALCenum ALCwinmmPlayback_open(ALCwinmmPlayback *self, const ALCchar *devi
 #define MATCH_DEVNAME(iter) (!al_string_empty(*(iter)) && \
                              (!deviceName || al_string_cmp_cstr(*(iter), deviceName) == 0))
     VECTOR_FIND_IF(iter, const al_string, PlaybackDevices, MATCH_DEVNAME);
-    if(iter == VECTOR_ITER_END(PlaybackDevices))
+    if(iter == VECTOR_END(PlaybackDevices))
         return ALC_INVALID_VALUE;
 #undef MATCH_DEVNAME
 
-    DeviceID = (UINT)(iter - VECTOR_ITER_BEGIN(PlaybackDevices));
+    DeviceID = (UINT)(iter - VECTOR_BEGIN(PlaybackDevices));
 
 retry_open:
     memset(&self->Format, 0, sizeof(WAVEFORMATEX));
@@ -430,7 +430,7 @@ typedef struct ALCwinmmCapture {
 
     HWAVEIN InHdl;
 
-    RingBuffer *Ring;
+    ll_ringbuffer_t *Ring;
 
     WAVEFORMATEX Format;
 
@@ -514,8 +514,9 @@ static int ALCwinmmCapture_captureProc(void *arg)
             break;
 
         WaveHdr = ((WAVEHDR*)msg.lParam);
-        WriteRingBuffer(self->Ring, (ALubyte*)WaveHdr->lpData,
-                        WaveHdr->dwBytesRecorded/self->Format.nBlockAlign);
+        ll_ringbuffer_write(self->Ring, WaveHdr->lpData,
+            WaveHdr->dwBytesRecorded / self->Format.nBlockAlign
+        );
 
         // Send buffer back to capture more data
         waveInAddBuffer(self->InHdl, WaveHdr, sizeof(WAVEHDR));
@@ -543,11 +544,11 @@ static ALCenum ALCwinmmCapture_open(ALCwinmmCapture *self, const ALCchar *name)
     // Find the Device ID matching the deviceName if valid
 #define MATCH_DEVNAME(iter) (!al_string_empty(*(iter)) &&  (!name || al_string_cmp_cstr(*iter, name) == 0))
     VECTOR_FIND_IF(iter, const al_string, CaptureDevices, MATCH_DEVNAME);
-    if(iter == VECTOR_ITER_END(CaptureDevices))
+    if(iter == VECTOR_END(CaptureDevices))
         return ALC_INVALID_VALUE;
 #undef MATCH_DEVNAME
 
-    DeviceID = (UINT)(iter - VECTOR_ITER_BEGIN(CaptureDevices));
+    DeviceID = (UINT)(iter - VECTOR_BEGIN(CaptureDevices));
 
     switch(device->FmtChans)
     {
@@ -604,7 +605,7 @@ static ALCenum ALCwinmmCapture_open(ALCwinmmCapture *self, const ALCchar *name)
     if(CapturedDataSize < (self->Format.nSamplesPerSec / 10))
         CapturedDataSize = self->Format.nSamplesPerSec / 10;
 
-    self->Ring = CreateRingBuffer(self->Format.nBlockAlign, CapturedDataSize);
+    self->Ring = ll_ringbuffer_create(CapturedDataSize+1, self->Format.nBlockAlign);
     if(!self->Ring) goto failure;
 
     InitRef(&self->WaveBuffersCommitted, 0);
@@ -645,8 +646,7 @@ failure:
         free(BufferData);
     }
 
-    if(self->Ring)
-        DestroyRingBuffer(self->Ring);
+    ll_ringbuffer_free(self->Ring);
     self->Ring = NULL;
 
     if(self->InHdl)
@@ -679,7 +679,7 @@ static void ALCwinmmCapture_close(ALCwinmmCapture *self)
     }
     free(buffer);
 
-    DestroyRingBuffer(self->Ring);
+    ll_ringbuffer_free(self->Ring);
     self->Ring = NULL;
 
     // Close the Wave device
@@ -700,13 +700,13 @@ static void ALCwinmmCapture_stop(ALCwinmmCapture *self)
 
 static ALCenum ALCwinmmCapture_captureSamples(ALCwinmmCapture *self, ALCvoid *buffer, ALCuint samples)
 {
-    ReadRingBuffer(self->Ring, buffer, samples);
+    ll_ringbuffer_read(self->Ring, buffer, samples);
     return ALC_NO_ERROR;
 }
 
 static ALCuint ALCwinmmCapture_availableSamples(ALCwinmmCapture *self)
 {
-    return RingBufferSize(self->Ring);
+    return ll_ringbuffer_read_space(self->Ring);
 }
 
 

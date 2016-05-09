@@ -218,6 +218,8 @@ AL_API void AL_APIENTRY alRequestFoldbackStop(void);
 #define AL_6POINT1_SOFT                          0x1505
 #define AL_7POINT1_SOFT                          0x1506
 #define AL_RME22_SOFT                            0x1507
+#define AL_BFORMAT2D_SOFT                        0x1508
+#define AL_BFORMAT3D_SOFT                        0x1509
 
 /* Sample types */
 #define AL_BYTE_SOFT                             0x1400

@@ -93,8 +93,8 @@ static ALboolean ALmodulatorState_deviceUpdate(ALmodulatorState *UNUSED(state), 
 
 static ALvoid ALmodulatorState_update(ALmodulatorState *state, const ALCdevice *Device, const ALeffectslot *Slot)
 {
-    ALfloat scale, cw, a;
     aluMatrixf matrix;
+    ALfloat cw, a;
     ALuint i;
 
     if(Slot->EffectProps.Modulator.Waveform == AL_RING_MODULATOR_SINUSOID)
@@ -122,16 +122,18 @@ static ALvoid ALmodulatorState_update(ALmodulatorState *state, const ALCdevice *
         state->Filter[i].process = ALfilterState_processC;
     }
 
-    scale = Device->AmbiScale;
     aluMatrixfSet(&matrix,
-        1.0f,  0.0f,  0.0f,  0.0f,
-        0.0f, scale,  0.0f,  0.0f,
-        0.0f,  0.0f, scale,  0.0f,
-        0.0f,  0.0f,  0.0f, scale
+        1.0f, 0.0f, 0.0f, 0.0f,
+        0.0f, 1.0f, 0.0f, 0.0f,
+        0.0f, 0.0f, 1.0f, 0.0f,
+        0.0f, 0.0f, 0.0f, 1.0f
     );
+
+    STATIC_CAST(ALeffectState,state)->OutBuffer = Device->FOAOut.Buffer;
+    STATIC_CAST(ALeffectState,state)->OutChannels = Device->FOAOut.NumChannels;
     for(i = 0;i < MAX_EFFECT_CHANNELS;i++)
-        ComputeFirstOrderGains(Device->AmbiCoeffs, Device->NumChannels,
-                               matrix.m[i], Slot->Gain, state->Gain[i]);
+        ComputeFirstOrderGains(Device->FOAOut, matrix.m[i], Slot->Gain,
+                               state->Gain[i]);
 }
 
 static ALvoid ALmodulatorState_process(ALmodulatorState *state, ALuint SamplesToDo, const ALfloat (*restrict SamplesIn)[BUFFERSIZE], ALfloat (*restrict SamplesOut)[BUFFERSIZE], ALuint NumChannels)

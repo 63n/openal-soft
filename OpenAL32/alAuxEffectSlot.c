@@ -31,6 +31,8 @@
 #include "alError.h"
 #include "alSource.h"
 
+#include "almalloc.h"
+
 
 extern inline struct ALeffectslot *LookupEffectSlot(ALCcontext *context, ALuint id);
 extern inline struct ALeffectslot *RemoveEffectSlot(ALCcontext *context, ALuint id);
@@ -96,7 +98,7 @@ AL_API ALvoid AL_APIENTRY alGenAuxiliaryEffectSlots(ALsizei n, ALuint *effectslo
 
         effectslots[cur] = slot->id;
     }
-    err = AddEffectSlotArray(context, VECTOR_ITER_BEGIN(slotvec), n);
+    err = AddEffectSlotArray(context, VECTOR_BEGIN(slotvec), n);
     if(err != AL_NO_ERROR)
     {
         alDeleteAuxiliaryEffectSlots(cur, effectslots);
@@ -392,7 +394,7 @@ static ALenum AddEffectSlotArray(ALCcontext *context, ALeffectslot **start, ALsi
     ALenum err = AL_NO_ERROR;
 
     LockContext(context);
-    if(!VECTOR_INSERT(context->ActiveAuxSlots, VECTOR_ITER_END(context->ActiveAuxSlots), start, start+count))
+    if(!VECTOR_INSERT(context->ActiveAuxSlots, VECTOR_END(context->ActiveAuxSlots), start, start+count))
         err = AL_OUT_OF_MEMORY;
     UnlockContext(context);
 
@@ -406,7 +408,7 @@ static void RemoveEffectSlotArray(ALCcontext *context, const ALeffectslot *slot)
     LockContext(context);
 #define MATCH_SLOT(_i)  (slot == *(_i))
     VECTOR_FIND_IF(iter, ALeffectslot*, context->ActiveAuxSlots, MATCH_SLOT);
-    if(iter != VECTOR_ITER_END(context->ActiveAuxSlots))
+    if(iter != VECTOR_END(context->ActiveAuxSlots))
     {
         *iter = VECTOR_BACK(context->ActiveAuxSlots);
         VECTOR_POP_BACK(context->ActiveAuxSlots);
@@ -464,6 +466,8 @@ ALenum InitializeEffect(ALCdevice *Device, ALeffectslot *EffectSlot, ALeffect *e
         SetMixerFPUMode(&oldMode);
 
         ALCdevice_Lock(Device);
+        State->OutBuffer = Device->Dry.Buffer;
+        State->OutChannels = Device->Dry.NumChannels;
         if(V(State,deviceUpdate)(Device) == AL_FALSE)
         {
             ALCdevice_Unlock(Device);
