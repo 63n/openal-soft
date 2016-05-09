@@ -495,15 +495,15 @@ static const ChannelMap MonoCfg[1] = {
     { BackRight,   { 0.224752f, -0.295009f, -0.170325f, 0.0f, 0.0f, 0.0f, 0.0f,  0.105349f,  0.182473f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,  0.000000f, -0.065799f } },
     { SideLeft,    { 0.224739f,  0.000000f,  0.340644f, 0.0f, 0.0f, 0.0f, 0.0f, -0.210697f,  0.000000f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,  0.000000f, -0.065795f } },
     { SideRight,   { 0.224739f,  0.000000f, -0.340644f, 0.0f, 0.0f, 0.0f, 0.0f, -0.210697f,  0.000000f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,  0.000000f,  0.065795f } },
-}, XRME22Cfg[21] = {
-    { FrontLeft,   { 0.707106781f, 0.0f,  0.5f, 0.0f } }, // these need to be calculated using the Matlab Ambisonics Toolkit   https://bitbucket.org/ambidecodertoolbox/adt/
+}, XRME22Cfg[22] = {
+    { FrontLeft,   { 0.707106781f, 0.0f,  0.5f, 0.0f } },
     { FrontRight,  { 0.707106781f, 0.0f, -0.5f, 0.0f } },
     { FrontCenter, { 0.707106781f, 0.0f,  0.5f, 0.0f } },
     { BackLeft,    { 0.707106781f, 0.0f,  0.5f, 0.0f } },
     { BackRight,   { 0.707106781f, 0.0f, -0.5f, 0.0f } },
     { SideLeft,    { 0.707106781f, 0.0f,  0.5f, 0.0f } },
     { SideRight,   { 0.707106781f, 0.0f, -0.5f, 0.0f } },
-    { LFE,         { 0.707106781f, 0.0f, -0.5f, 0.0f } },  // Also LFE probably shouldn't be here  (LFE2?)
+    { LFE,         { 0.707106781f, 0.0f, -0.5f, 0.0f } },
     { Aux0,        { 0.707106781f, 0.0f, -0.5f, 0.0f } },  
     { Aux1,        { 0.707106781f, 0.0f,  0.5f, 0.0f } },
     { Aux2,        { 0.707106781f, 0.0f, -0.5f, 0.0f } },
@@ -517,7 +517,7 @@ static const ChannelMap MonoCfg[1] = {
     { Aux10,       { 0.707106781f, 0.0f, -0.5f, 0.0f } },
     { Aux11,       { 0.707106781f, 0.0f,  0.5f, 0.0f } },
     { Aux12,       { 0.707106781f, 0.0f, -0.5f, 0.0f } },
-    { Aux13,       { 0.707106781f, 0.0f,  0.5f, 0.0f } }
+    { Aux13,       { 0.707106781f, 0.0f,  0.5f, 0.0f } },
 };
 
 static void InitPanning(ALCdevice *device)
@@ -849,6 +849,7 @@ void aluInitRenderer(ALCdevice *device, ALint hrtf_id, enum HrtfRequestMode hrtf
             case DevFmtX51Rear: layout = "surround51rear"; break;
             case DevFmtX61: layout = "surround61"; break;
             case DevFmtX71: layout = "surround71"; break;
+            // case DevFmtXRME22: layout = "RME22"; break;
             /* Mono, Stereo, and B-Fornat output don't use custom decoders. */
             case DevFmtMono:
             case DevFmtStereo:
