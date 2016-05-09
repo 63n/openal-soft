@@ -245,10 +245,23 @@ void ComputePanningGainsBF(const BFChannelConfig *chanmap, ALuint numchans, cons
 {
     ALuint i;
 
-    for(i = 0;i < numchans;i++)
+printf("in ComputePanningGainsBF\n");
+printf("numchans is %d\n", numchans);
+
+    for(i = 0;i < numchans;i++) {
+	printf("i %d\n", i);
+	printf("ingain %f\n", ingain);
+	// printf("chanmap i %s\n", chanmap[i]);
+	printf("chanmap Scale %f\n", chanmap[i].Scale);
+	printf("chanmap Index %d\n", chanmap[i].Index);
+	printf("coeffs i %d\n", coeffs[chanmap[i].Index]);
+	printf("gains i %d\n", gains[i]);
         gains[i] = chanmap[i].Scale * coeffs[chanmap[i].Index] * ingain;
-    for(;i < MAX_OUTPUT_CHANNELS;i++)
+    }
+    for(;i < MAX_OUTPUT_CHANNELS;i++) {
+	printf("clear gain i =  %d", i);
         gains[i] = 0.0f;
+    }
 }
 
 void ComputeFirstOrderGainsMC(const ChannelConfig *chancoeffs, ALuint numchans, const ALfloat mtx[4], ALfloat ingain, ALfloat gains[MAX_OUTPUT_CHANNELS])
@@ -849,7 +862,7 @@ void aluInitRenderer(ALCdevice *device, ALint hrtf_id, enum HrtfRequestMode hrtf
             case DevFmtX51Rear: layout = "surround51rear"; break;
             case DevFmtX61: layout = "surround61"; break;
             case DevFmtX71: layout = "surround71"; break;
-            // case DevFmtXRME22: layout = "RME22"; break;
+            case DevFmtXRME22: layout = "RME22"; break;
             /* Mono, Stereo, and B-Fornat output don't use custom decoders. */
             case DevFmtMono:
             case DevFmtStereo:
