@@ -91,7 +91,7 @@ static ALCboolean ALCwaveBackend_start(ALCwaveBackend *self);
 static void ALCwaveBackend_stop(ALCwaveBackend *self);
 static DECLARE_FORWARD2(ALCwaveBackend, ALCbackend, ALCenum, captureSamples, void*, ALCuint)
 static DECLARE_FORWARD(ALCwaveBackend, ALCbackend, ALCuint, availableSamples)
-static DECLARE_FORWARD(ALCwaveBackend, ALCbackend, ALint64, getLatency)
+static DECLARE_FORWARD(ALCwaveBackend, ALCbackend, ClockLatency, getClockLatency)
 static DECLARE_FORWARD(ALCwaveBackend, ALCbackend, void, lock)
 static DECLARE_FORWARD(ALCwaveBackend, ALCbackend, void, unlock)
 DECLARE_DEFAULT_ALLOCATORS(ALCwaveBackend)
@@ -127,7 +127,7 @@ static int ALCwaveBackend_mixerProc(void *ptr)
 
     althrd_setname(althrd_current(), MIXER_THREAD_NAME);
 
-    frameSize = FrameSizeFromDevFmt(device->FmtChans, device->FmtType);
+    frameSize = FrameSizeFromDevFmt(device->FmtChans, device->FmtType, device->AmbiOrder);
 
     done = 0;
     if(altimespec_get(&start, AL_TIME_UTC) != AL_TIME_UTC)
@@ -157,7 +157,9 @@ static int ALCwaveBackend_mixerProc(void *ptr)
             al_nssleep(restTime);
         else while(avail-done >= device->UpdateSize)
         {
+            ALCwaveBackend_lock(self);
             aluMixData(device, self->mBuffer, device->UpdateSize);
+            ALCwaveBackend_unlock(self);
             done += device->UpdateSize;
 
             if(!IS_LITTLE_ENDIAN)
@@ -226,7 +228,7 @@ static ALCenum ALCwaveBackend_open(ALCwaveBackend *self, const ALCchar *name)
     }
 
     device = STATIC_CAST(ALCbackend, self)->mDevice;
-    al_string_copy_cstr(&device->DeviceName, name);
+    alstr_copy_cstr(&device->DeviceName, name);
 
     return ALC_NO_ERROR;
 }
@@ -249,7 +251,10 @@ static ALCboolean ALCwaveBackend_reset(ALCwaveBackend *self)
     clearerr(self->mFile);
 
     if(GetConfigValueBool(NULL, "wave", "bformat", 0))
-        device->FmtChans = DevFmtBFormat3D;
+    {
+        device->FmtChans = DevFmtAmbi3D;
+        device->AmbiOrder = 1;
+    }
 
     switch(device->FmtType)
     {
@@ -299,49 +304,51 @@ static ALCboolean ALCwaveBackend_reset(ALCwaveBackend *self)
         case DevFmtMono:   chanmask = 0x04; break;
         case DevFmtStereo: chanmask = 0x01 | 0x02; break;
         case DevFmtQuad:   chanmask = 0x01 | 0x02 | 0x10 | 0x20; break;
-        case DevFmtX51:    chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x200 | 0x400; break;
-        case DevFmtX51Rear:chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x010 | 0x020; break;
-        case DevFmtX61:    chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x100 | 0x200 | 0x400; break;
-        case DevFmtX71:    chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x010 | 0x020 | 0x200 | 0x400; break;
+        case DevFmtX51: chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x200 | 0x400; break;
+        case DevFmtX51Rear: chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x010 | 0x020; break;
+        case DevFmtX61: chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x100 | 0x200 | 0x400; break;
+        case DevFmtX71: chanmask = 0x01 | 0x02 | 0x04 | 0x08 | 0x010 | 0x020 | 0x200 | 0x400; break;
+        case DevFmtAmbi3D:
+            /* .amb output requires FuMa */
+            device->AmbiLayout = AmbiLayout_FuMa;
+            device->AmbiScale = AmbiNorm_FuMa;
+            isbformat = 1;
+            chanmask = 0;
+            break;
 
-		/*
-		   The DevFmtXRME22 chanmask is "direct out" which is 0
-		   This will pass through all channels for RME22
-
-		   https://msdn.microsoft.com/en-us/library/windows/hardware/ff536368%28v=vs.85%29.aspx
-
-		   In direct-out mode "KSAUDIO_SPEAKER_DIRECTOUT", the audio device renders
-		   the first channel to the first output connector on the device, the second
-		   channel to the second output on the device, and so on. This allows an audio
-		   authoring application to output multichannel data directly to a device such
-		   as an external mixer or an audio storage device (hard disk, ADAT, and so on).
-
-		   When specifying the wave format for a direct-out stream, an application
-		   should set the dwChannelMask member of the WAVEFORMATEXTENSIBLE structure to
-		   the value KSAUDIO_SPEAKER_DIRECTOUT, which is zero. A channel mask of zero
-		   indicates that no speaker positions are defined. As always, the number of
-		   channels in the stream is specified in the Format.nChannels member.
-		*/
+	/*
+	 * The DevFmtXRME22 chanmask is "direct out" which is 0
+	 * This will pass through all channels for RME22
+         *
+	 * https://msdn.microsoft.com/en-us/library/windows/hardware/ff536368%28v=vs.85%29.aspx
+         *
+	 * In direct-out mode "KSAUDIO_SPEAKER_DIRECTOUT", the audio device renders
+	 * the first channel to the first output connector on the device, the second
+	 * channel to the second output on the device, and so on. This allows an audio
+	 * authoring application to output multichannel data directly to a device such
+	 * as an external mixer or an audio storage device (hard disk, ADAT, and so on).
+         *
+	 * When specifying the wave format for a direct-out stream, an application
+	 * should set the dwChannelMask member of the WAVEFORMATEXTENSIBLE structure to
+	 * the value KSAUDIO_SPEAKER_DIRECTOUT, which is zero. A channel mask of zero
+	 * indicates that no speaker positions are defined. As always, the number of
+	 * channels in the stream is specified in the Format.nChannels member.
+	 */
         case DevFmtXRME22:
-		ERR("\n\nHEY WE ARE IN WAV CASE DevFmtXRME22\n\n\n");
 		isbformat = 0;
 		chanmask = 0;
 		break;
 
-        case DevFmtBFormat3D:
-            isbformat = 1;
-            chanmask = 0;
-            break;
     }
     bits = BytesFromDevFmt(device->FmtType) * 8;
-    channels = ChannelsFromDevFmt(device->FmtChans);
+    channels = ChannelsFromDevFmt(device->FmtChans, device->AmbiOrder);
 
-    fprintf(self->mFile, "RIFF");
+    fputs("RIFF", self->mFile);
     fwrite32le(0xFFFFFFFF, self->mFile); // 'RIFF' header len; filled in at close
 
-    fprintf(self->mFile, "WAVE");
+    fputs("WAVE", self->mFile);
 
-    fprintf(self->mFile, "fmt ");
+    fputs("fmt ", self->mFile);
     fwrite32le(40, self->mFile); // 'fmt ' header len; 40 bytes for EXTENSIBLE
 
     // 16-bit val, format type id (extensible: 0xFFFE)
@@ -363,11 +370,12 @@ static ALCboolean ALCwaveBackend_reset(ALCwaveBackend *self)
     // 32-bit val, channel mask
     fwrite32le(chanmask, self->mFile);
     // 16 byte GUID, sub-type format
-    val = fwrite(((bits==32) ? (isbformat ? SUBTYPE_BFORMAT_FLOAT : SUBTYPE_FLOAT) :
-                               (isbformat ? SUBTYPE_BFORMAT_PCM : SUBTYPE_PCM)), 1, 16, self->mFile);
+    val = fwrite((device->FmtType == DevFmtFloat) ?
+                 (isbformat ? SUBTYPE_BFORMAT_FLOAT : SUBTYPE_FLOAT) :
+                 (isbformat ? SUBTYPE_BFORMAT_PCM : SUBTYPE_PCM), 1, 16, self->mFile);
     (void)val;
 
-    fprintf(self->mFile, "data");
+    fputs("data", self->mFile);
     fwrite32le(0xFFFFFFFF, self->mFile); // 'data' header len; filled in at close
 
     if(ferror(self->mFile))
@@ -386,7 +394,9 @@ static ALCboolean ALCwaveBackend_start(ALCwaveBackend *self)
 {
     ALCdevice *device = STATIC_CAST(ALCbackend, self)->mDevice;
 
-    self->mSize = device->UpdateSize * FrameSizeFromDevFmt(device->FmtChans, device->FmtType);
+    self->mSize = device->UpdateSize * FrameSizeFromDevFmt(
+        device->FmtChans, device->FmtType, device->AmbiOrder
+    );
     self->mBuffer = malloc(self->mSize);
     if(!self->mBuffer)
     {

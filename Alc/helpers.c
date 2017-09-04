@@ -32,11 +32,16 @@
 #include <time.h>
 #include <errno.h>
 #include <stdarg.h>
+#include <ctype.h>
 #ifdef HAVE_MALLOC_H
 #include <malloc.h>
 #endif
 #ifdef HAVE_DIRENT_H
 #include <dirent.h>
+#endif
+
+#ifdef __FreeBSD__
+#include <sys/sysctl.h>
 #endif
 
 #ifndef AL_NO_UID_DEFS
@@ -61,10 +66,12 @@ DEFINE_GUID(IID_IAudioRenderClient,   0xf294acfc, 0x3146, 0x4483, 0xa7,0xbf, 0xa
 DEFINE_GUID(IID_IAudioCaptureClient,  0xc8adbd64, 0xe71e, 0x48a0, 0xa4,0xde, 0x18,0x5c,0x39,0x5c,0xd3,0x17);
 
 #ifdef HAVE_MMDEVAPI
+#include <wtypes.h>
 #include <devpropdef.h>
 #include <propkeydef.h>
 DEFINE_DEVPROPKEY(DEVPKEY_Device_FriendlyName, 0xa45c254e, 0xdf1c, 0x4efd, 0x80,0x20, 0x67,0xd1,0x46,0xa8,0x50,0xe0, 14);
 DEFINE_PROPERTYKEY(PKEY_AudioEndpoint_FormFactor, 0x1da5d803, 0xd492, 0x4edd, 0x8c,0x23, 0xe0,0xc0,0xff,0xee,0x7f,0x0e, 0);
+DEFINE_PROPERTYKEY(PKEY_AudioEndpoint_GUID, 0x1da5d803, 0xd492, 0x4edd, 0x8c, 0x23,0xe0, 0xc0,0xff,0xee,0x7f,0x0e, 4 );
 #endif
 #endif
 #endif /* AL_NO_UID_DEFS */
@@ -89,6 +96,10 @@ DEFINE_PROPERTYKEY(PKEY_AudioEndpoint_FormFactor, 0x1da5d803, 0xd492, 0x4edd, 0x
 #endif
 
 #ifndef _WIN32
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 #include <unistd.h>
 #elif defined(_WIN32_IE)
 #include <shlobj.h>
@@ -105,8 +116,11 @@ DEFINE_PROPERTYKEY(PKEY_AudioEndpoint_FormFactor, 0x1da5d803, 0xd492, 0x4edd, 0x
 
 
 extern inline ALuint NextPowerOf2(ALuint value);
+extern inline size_t RoundUp(size_t value, size_t r);
+extern inline ALuint64 ScaleRound(ALuint64 val, ALuint64 new_scale, ALuint64 old_scale);
+extern inline ALuint64 ScaleFloor(ALuint64 val, ALuint64 new_scale, ALuint64 old_scale);
+extern inline ALuint64 ScaleCeil(ALuint64 val, ALuint64 new_scale, ALuint64 old_scale);
 extern inline ALint fastf2i(ALfloat f);
-extern inline ALuint fastf2u(ALfloat f);
 
 
 ALuint CPUCapFlags = 0;
@@ -227,8 +241,42 @@ void FillCPUCaps(ALuint capfilter)
 #endif
 #endif
 #ifdef HAVE_NEON
-    /* Assume Neon support if compiled with it */
-    caps |= CPU_CAP_NEON;
+    FILE *file = fopen("/proc/cpuinfo", "rt");
+    if(!file)
+        ERR("Failed to open /proc/cpuinfo, cannot check for NEON support\n");
+    else
+    {
+        char buf[256];
+        while(fgets(buf, sizeof(buf), file) != NULL)
+        {
+            size_t len;
+            char *str;
+
+            if(strncmp(buf, "Features\t:", 10) != 0)
+                continue;
+
+            len = strlen(buf);
+            while(len > 0 && isspace(buf[len-1]))
+                buf[--len] = 0;
+
+            TRACE("Got features string:%s\n", buf+10);
+
+            str = buf;
+            while((str=strstr(str, "neon")) != NULL)
+            {
+                if(isspace(*(str-1)) && (str[4] == 0 || isspace(str[4])))
+                {
+                    caps |= CPU_CAP_NEON;
+                    break;
+                }
+                str++;
+            }
+            break;
+        }
+
+        fclose(file);
+        file = NULL;
+    }
 #endif
 
     TRACE("Extensions:%s%s%s%s%s%s\n",
@@ -236,7 +284,7 @@ void FillCPUCaps(ALuint capfilter)
         ((capfilter&CPU_CAP_SSE2)   ? ((caps&CPU_CAP_SSE2)   ? " +SSE2"   : " -SSE2")   : ""),
         ((capfilter&CPU_CAP_SSE3)   ? ((caps&CPU_CAP_SSE3)   ? " +SSE3"   : " -SSE3")   : ""),
         ((capfilter&CPU_CAP_SSE4_1) ? ((caps&CPU_CAP_SSE4_1) ? " +SSE4.1" : " -SSE4.1") : ""),
-        ((capfilter&CPU_CAP_NEON)   ? ((caps&CPU_CAP_NEON)   ? " +Neon"   : " -Neon")   : ""),
+        ((capfilter&CPU_CAP_NEON)   ? ((caps&CPU_CAP_NEON)   ? " +NEON"   : " -NEON")   : ""),
         ((!capfilter) ? " -none-" : "")
     );
     CPUCapFlags = caps & capfilter;
@@ -316,10 +364,61 @@ void RestoreFPUMode(const FPUCtl *ctl)
 
 static int StringSortCompare(const void *str1, const void *str2)
 {
-    return al_string_cmp(*(const_al_string*)str1, *(const_al_string*)str2);
+    return alstr_cmp(*(const_al_string*)str1, *(const_al_string*)str2);
 }
 
 #ifdef _WIN32
+
+static WCHAR *strrchrW(WCHAR *str, WCHAR ch)
+{
+    WCHAR *ret = NULL;
+    while(*str)
+    {
+        if(*str == ch)
+            ret = str;
+        ++str;
+    }
+    return ret;
+}
+
+al_string GetProcPath(void)
+{
+    al_string ret = AL_STRING_INIT_STATIC();
+    WCHAR *pathname, *sep;
+    DWORD pathlen;
+    DWORD len;
+
+    pathlen = 256;
+    pathname = malloc(pathlen * sizeof(pathname[0]));
+    while(pathlen > 0 && (len=GetModuleFileNameW(NULL, pathname, pathlen)) == pathlen)
+    {
+        free(pathname);
+        pathlen <<= 1;
+        pathname = malloc(pathlen * sizeof(pathname[0]));
+    }
+    if(len == 0)
+    {
+        free(pathname);
+        ERR("Failed to get process name: error %lu\n", GetLastError());
+        return ret;
+    }
+
+    pathname[len] = 0;
+    if((sep = strrchrW(pathname, '\\')))
+    {
+        WCHAR *sep2 = strrchrW(pathname, '/');
+        if(sep2) *sep2 = 0;
+        else *sep = 0;
+    }
+    else if((sep = strrchrW(pathname, '/')))
+        *sep = 0;
+    alstr_copy_wcstr(&ret, pathname);
+    free(pathname);
+
+    TRACE("Got: %s\n", alstr_get_cstr(ret));
+    return ret;
+}
+
 
 static WCHAR *FromUTF8(const char *str)
 {
@@ -433,13 +532,13 @@ static void DirectorySearch(const char *path, const char *ext, vector_al_string 
     WCHAR *wpath;
     HANDLE hdl;
 
-    al_string_copy_cstr(&pathstr, path);
-    al_string_append_cstr(&pathstr, "\\*");
-    al_string_append_cstr(&pathstr, ext);
+    alstr_copy_cstr(&pathstr, path);
+    alstr_append_cstr(&pathstr, "\\*");
+    alstr_append_cstr(&pathstr, ext);
 
-    TRACE("Searching %s\n", al_string_get_cstr(pathstr));
+    TRACE("Searching %s\n", alstr_get_cstr(pathstr));
 
-    wpath = FromUTF8(al_string_get_cstr(pathstr));
+    wpath = FromUTF8(alstr_get_cstr(pathstr));
 
     hdl = FindFirstFileW(wpath, &fdata);
     if(hdl != INVALID_HANDLE_VALUE)
@@ -447,10 +546,10 @@ static void DirectorySearch(const char *path, const char *ext, vector_al_string 
         size_t base = VECTOR_SIZE(*results);
         do {
             al_string str = AL_STRING_INIT_STATIC();
-            al_string_copy_cstr(&str, path);
-            al_string_append_char(&str, '\\');
-            al_string_append_wcstr(&str, fdata.cFileName);
-            TRACE("Got result %s\n", al_string_get_cstr(str));
+            alstr_copy_cstr(&str, path);
+            alstr_append_char(&str, '\\');
+            alstr_append_wcstr(&str, fdata.cFileName);
+            TRACE("Got result %s\n", alstr_get_cstr(str));
             VECTOR_PUSH_BACK(*results, str);
         } while(FindNextFileW(hdl, &fdata));
         FindClose(hdl);
@@ -461,7 +560,7 @@ static void DirectorySearch(const char *path, const char *ext, vector_al_string 
     }
 
     free(wpath);
-    al_string_deinit(&pathstr);
+    alstr_reset(&pathstr);
 }
 
 vector_al_string SearchDataFiles(const char *ext, const char *subdir)
@@ -471,21 +570,21 @@ vector_al_string SearchDataFiles(const char *ext, const char *subdir)
     vector_al_string results = VECTOR_INIT_STATIC();
     size_t i;
 
-    while(ATOMIC_EXCHANGE(uint, &search_lock, 1) == 1)
+    while(ATOMIC_EXCHANGE_SEQ(&search_lock, 1) == 1)
         althrd_yield();
 
     /* If the path is absolute, use it directly. */
     if(isalpha(subdir[0]) && subdir[1] == ':' && is_slash(subdir[2]))
     {
         al_string path = AL_STRING_INIT_STATIC();
-        al_string_copy_cstr(&path, subdir);
+        alstr_copy_cstr(&path, subdir);
 #define FIX_SLASH(i) do { if(*(i) == '/') *(i) = '\\'; } while(0)
         VECTOR_FOR_EACH(char, path, FIX_SLASH);
 #undef FIX_SLASH
 
-        DirectorySearch(al_string_get_cstr(path), ext, &results);
+        DirectorySearch(alstr_get_cstr(path), ext, &results);
 
-        al_string_deinit(&path);
+        alstr_reset(&path);
     }
     else if(subdir[0] == '\\' && subdir[1] == '\\' && subdir[2] == '?' && subdir[3] == '\\')
         DirectorySearch(subdir, ext, &results);
@@ -497,7 +596,7 @@ vector_al_string SearchDataFiles(const char *ext, const char *subdir)
         /* Search the app-local directory. */
         if((cwdbuf=_wgetenv(L"ALSOFT_LOCAL_PATH")) && *cwdbuf != '\0')
         {
-            al_string_copy_wcstr(&path, cwdbuf);
+            alstr_copy_wcstr(&path, cwdbuf);
             if(is_slash(VECTOR_BACK(path)))
             {
                 VECTOR_POP_BACK(path);
@@ -505,10 +604,10 @@ vector_al_string SearchDataFiles(const char *ext, const char *subdir)
             }
         }
         else if(!(cwdbuf=_wgetcwd(NULL, 0)))
-            al_string_copy_cstr(&path, ".");
+            alstr_copy_cstr(&path, ".");
         else
         {
-            al_string_copy_wcstr(&path, cwdbuf);
+            alstr_copy_wcstr(&path, cwdbuf);
             if(is_slash(VECTOR_BACK(path)))
             {
                 VECTOR_POP_BACK(path);
@@ -519,7 +618,7 @@ vector_al_string SearchDataFiles(const char *ext, const char *subdir)
 #define FIX_SLASH(i) do { if(*(i) == '/') *(i) = '\\'; } while(0)
         VECTOR_FOR_EACH(char, path, FIX_SLASH);
 #undef FIX_SLASH
-        DirectorySearch(al_string_get_cstr(path), ext, &results);
+        DirectorySearch(alstr_get_cstr(path), ext, &results);
 
         /* Search the local and global data dirs. */
         for(i = 0;i < COUNTOF(ids);i++)
@@ -527,27 +626,150 @@ vector_al_string SearchDataFiles(const char *ext, const char *subdir)
             WCHAR buffer[PATH_MAX];
             if(SHGetSpecialFolderPathW(NULL, buffer, ids[i], FALSE) != FALSE)
             {
-                al_string_copy_wcstr(&path, buffer);
+                alstr_copy_wcstr(&path, buffer);
                 if(!is_slash(VECTOR_BACK(path)))
-                    al_string_append_char(&path, '\\');
-                al_string_append_cstr(&path, subdir);
+                    alstr_append_char(&path, '\\');
+                alstr_append_cstr(&path, subdir);
 #define FIX_SLASH(i) do { if(*(i) == '/') *(i) = '\\'; } while(0)
                 VECTOR_FOR_EACH(char, path, FIX_SLASH);
 #undef FIX_SLASH
 
-                DirectorySearch(al_string_get_cstr(path), ext, &results);
+                DirectorySearch(alstr_get_cstr(path), ext, &results);
             }
         }
 
-        al_string_deinit(&path);
+        alstr_reset(&path);
     }
 
-    ATOMIC_STORE(&search_lock, 0);
+    ATOMIC_STORE_SEQ(&search_lock, 0);
 
     return results;
 }
 
+
+struct FileMapping MapFileToMem(const char *fname)
+{
+    struct FileMapping ret = { NULL, NULL, NULL, 0 };
+    MEMORY_BASIC_INFORMATION meminfo;
+    HANDLE file, fmap;
+    WCHAR *wname;
+    void *ptr;
+
+    wname = FromUTF8(fname);
+
+    file = CreateFileW(wname, GENERIC_READ, FILE_SHARE_READ, NULL,
+                       OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if(file == INVALID_HANDLE_VALUE)
+    {
+        ERR("Failed to open %s: %lu\n", fname, GetLastError());
+        free(wname);
+        return ret;
+    }
+    free(wname);
+    wname = NULL;
+
+    fmap = CreateFileMappingW(file, NULL, PAGE_READONLY, 0, 0, NULL);
+    if(!fmap)
+    {
+        ERR("Failed to create map for %s: %lu\n", fname, GetLastError());
+        CloseHandle(file);
+        return ret;
+    }
+
+    ptr = MapViewOfFile(fmap, FILE_MAP_READ, 0, 0, 0);
+    if(!ptr)
+    {
+        ERR("Failed to map %s: %lu\n", fname, GetLastError());
+        CloseHandle(fmap);
+        CloseHandle(file);
+        return ret;
+    }
+
+    if(VirtualQuery(ptr, &meminfo, sizeof(meminfo)) != sizeof(meminfo))
+    {
+        ERR("Failed to get map size for %s: %lu\n", fname, GetLastError());
+        UnmapViewOfFile(ptr);
+        CloseHandle(fmap);
+        CloseHandle(file);
+        return ret;
+    }
+
+    ret.file = file;
+    ret.fmap = fmap;
+    ret.ptr = ptr;
+    ret.len = meminfo.RegionSize;
+    return ret;
+}
+
+void UnmapFileMem(const struct FileMapping *mapping)
+{
+    UnmapViewOfFile(mapping->ptr);
+    CloseHandle(mapping->fmap);
+    CloseHandle(mapping->file);
+}
+
 #else
+
+al_string GetProcPath(void)
+{
+    al_string ret = AL_STRING_INIT_STATIC();
+    char *pathname, *sep;
+    size_t pathlen;
+
+#ifdef __FreeBSD__
+    int mib[4] = {CTL_KERN, KERN_PROC, KERN_PROC_PATHNAME, -1};
+    mib[3] = getpid();
+    if (sysctl(mib, 4, NULL, &pathlen, NULL, 0) == -1) {
+        WARN("Failed to sysctl kern.proc.pathname.%d: %s\n", mib[3], strerror(errno));
+        return ret;
+    }
+
+    pathname = malloc(pathlen + 1);
+    sysctl(mib, 4, (void*)pathname, &pathlen, NULL, 0);
+    pathname[pathlen] = 0;
+#else
+    const char *fname;
+    ssize_t len;
+
+    pathlen = 256;
+    pathname = malloc(pathlen);
+
+    fname = "/proc/self/exe";
+    len = readlink(fname, pathname, pathlen);
+    if(len == -1 && errno == ENOENT)
+    {
+        fname = "/proc/self/file";
+        len = readlink(fname, pathname, pathlen);
+    }
+
+    while(len > 0 && (size_t)len == pathlen)
+    {
+        free(pathname);
+        pathlen <<= 1;
+        pathname = malloc(pathlen);
+        len = readlink(fname, pathname, pathlen);
+    }
+    if(len <= 0)
+    {
+        free(pathname);
+        WARN("Failed to readlink %s: %s\n", fname, strerror(errno));
+        return ret;
+    }
+
+    pathname[len] = 0;
+#endif
+
+    sep = strrchr(pathname, '/');
+    if(sep)
+        alstr_copy_range(&ret, pathname, sep);
+    else
+        alstr_copy_cstr(&ret, pathname);
+    free(pathname);
+
+    TRACE("Got: %s\n", alstr_get_cstr(ret));
+    return ret;
+}
+
 
 #ifdef HAVE_DLFCN_H
 
@@ -619,11 +841,11 @@ static void DirectorySearch(const char *path, const char *ext, vector_al_string 
                 continue;
 
             AL_STRING_INIT(str);
-            al_string_copy_cstr(&str, path);
+            alstr_copy_cstr(&str, path);
             if(VECTOR_BACK(str) != '/')
-                al_string_append_char(&str, '/');
-            al_string_append_cstr(&str, dirent->d_name);
-            TRACE("Got result %s\n", al_string_get_cstr(str));
+                alstr_append_char(&str, '/');
+            alstr_append_cstr(&str, dirent->d_name);
+            TRACE("Got result %s\n", alstr_get_cstr(str));
             VECTOR_PUSH_BACK(*results, str);
         }
         closedir(dir);
@@ -639,7 +861,7 @@ vector_al_string SearchDataFiles(const char *ext, const char *subdir)
     static RefCount search_lock;
     vector_al_string results = VECTOR_INIT_STATIC();
 
-    while(ATOMIC_EXCHANGE(uint, &search_lock, 1) == 1)
+    while(ATOMIC_EXCHANGE_SEQ(&search_lock, 1) == 1)
         althrd_yield();
 
     if(subdir[0] == '/')
@@ -661,23 +883,23 @@ vector_al_string SearchDataFiles(const char *ext, const char *subdir)
         // Search local data dir
         if((str=getenv("XDG_DATA_HOME")) != NULL && str[0] != '\0')
         {
-            al_string_copy_cstr(&path, str);
+            alstr_copy_cstr(&path, str);
             if(VECTOR_BACK(path) != '/')
-                al_string_append_char(&path, '/');
-            al_string_append_cstr(&path, subdir);
-            DirectorySearch(al_string_get_cstr(path), ext, &results);
+                alstr_append_char(&path, '/');
+            alstr_append_cstr(&path, subdir);
+            DirectorySearch(alstr_get_cstr(path), ext, &results);
         }
         else if((str=getenv("HOME")) != NULL && str[0] != '\0')
         {
-            al_string_copy_cstr(&path, str);
+            alstr_copy_cstr(&path, str);
             if(VECTOR_BACK(path) == '/')
             {
                 VECTOR_POP_BACK(path);
                 *VECTOR_END(path) = 0;
             }
-            al_string_append_cstr(&path, "/.local/share/");
-            al_string_append_cstr(&path, subdir);
-            DirectorySearch(al_string_get_cstr(path), ext, &results);
+            alstr_append_cstr(&path, "/.local/share/");
+            alstr_append_cstr(&path, subdir);
+            DirectorySearch(alstr_get_cstr(path), ext, &results);
         }
 
         // Search global data dirs
@@ -689,28 +911,69 @@ vector_al_string SearchDataFiles(const char *ext, const char *subdir)
         {
             next = strchr(str, ':');
             if(!next)
-                al_string_copy_cstr(&path, str);
+                alstr_copy_cstr(&path, str);
             else
             {
-                al_string_copy_range(&path, str, next);
+                alstr_copy_range(&path, str, next);
                 ++next;
             }
-            if(!al_string_empty(path))
+            if(!alstr_empty(path))
             {
                 if(VECTOR_BACK(path) != '/')
-                    al_string_append_char(&path, '/');
-                al_string_append_cstr(&path, subdir);
+                    alstr_append_char(&path, '/');
+                alstr_append_cstr(&path, subdir);
 
-                DirectorySearch(al_string_get_cstr(path), ext, &results);
+                DirectorySearch(alstr_get_cstr(path), ext, &results);
             }
         }
 
-        al_string_deinit(&path);
+        alstr_reset(&path);
     }
 
-    ATOMIC_STORE(&search_lock, 0);
+    ATOMIC_STORE_SEQ(&search_lock, 0);
 
     return results;
+}
+
+
+struct FileMapping MapFileToMem(const char *fname)
+{
+    struct FileMapping ret = { -1, NULL, 0 };
+    struct stat sbuf;
+    void *ptr;
+    int fd;
+
+    fd = open(fname, O_RDONLY, 0);
+    if(fd == -1)
+    {
+        ERR("Failed to open %s: (%d) %s\n", fname, errno, strerror(errno));
+        return ret;
+    }
+    if(fstat(fd, &sbuf) == -1)
+    {
+        ERR("Failed to stat %s: (%d) %s\n", fname, errno, strerror(errno));
+        close(fd);
+        return ret;
+    }
+
+    ptr = mmap(NULL, sbuf.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    if(ptr == MAP_FAILED)
+    {
+        ERR("Failed to map %s: (%d) %s\n", fname, errno, strerror(errno));
+        close(fd);
+        return ret;
+    }
+
+    ret.fd = fd;
+    ret.ptr = ptr;
+    ret.len = sbuf.st_size;
+    return ret;
+}
+
+void UnmapFileMem(const struct FileMapping *mapping)
+{
+    munmap(mapping->ptr, mapping->len);
+    close(mapping->fd);
 }
 
 #endif
@@ -741,97 +1004,26 @@ void SetRTPriority(void)
 }
 
 
-ALboolean vector_reserve(char *ptr, size_t base_size, size_t obj_size, size_t obj_count, ALboolean exact)
+extern inline void alstr_reset(al_string *str);
+extern inline size_t alstr_length(const_al_string str);
+extern inline ALboolean alstr_empty(const_al_string str);
+extern inline const al_string_char_type *alstr_get_cstr(const_al_string str);
+
+void alstr_clear(al_string *str)
 {
-    vector_ *vecptr = (vector_*)ptr;
-    if((*vecptr ? (*vecptr)->Capacity : 0) < obj_count)
-    {
-        size_t old_size = (*vecptr ? (*vecptr)->Size : 0);
-        void *temp;
-
-        /* Use the next power-of-2 size if we don't need to allocate the exact
-         * amount. This is preferred when regularly increasing the vector since
-         * it means fewer reallocations. Though it means it also wastes some
-         * memory. */
-        if(exact == AL_FALSE && obj_count < INT_MAX)
-            obj_count = NextPowerOf2((ALuint)obj_count);
-
-        /* Need to be explicit with the caller type's base size, because it
-         * could have extra padding before the start of the array (that is,
-         * sizeof(*vector_) may not equal base_size). */
-        temp = realloc(*vecptr, base_size + obj_size*obj_count);
-        if(temp == NULL) return AL_FALSE;
-
-        *vecptr = temp;
-        (*vecptr)->Capacity = obj_count;
-        (*vecptr)->Size = old_size;
-    }
-    return AL_TRUE;
-}
-
-ALboolean vector_resize(char *ptr, size_t base_size, size_t obj_size, size_t obj_count)
-{
-    vector_ *vecptr = (vector_*)ptr;
-    if(*vecptr || obj_count > 0)
-    {
-        if(!vector_reserve((char*)vecptr, base_size, obj_size, obj_count, AL_TRUE))
-            return AL_FALSE;
-        (*vecptr)->Size = obj_count;
-    }
-    return AL_TRUE;
-}
-
-ALboolean vector_insert(char *ptr, size_t base_size, size_t obj_size, void *ins_pos, const void *datstart, const void *datend)
-{
-    vector_ *vecptr = (vector_*)ptr;
-    if(datstart != datend)
-    {
-        ptrdiff_t ins_elem = (*vecptr ? ((char*)ins_pos - ((char*)(*vecptr) + base_size)) :
-                                        ((char*)ins_pos - (char*)NULL)) /
-                             obj_size;
-        ptrdiff_t numins = ((const char*)datend - (const char*)datstart) / obj_size;
-
-        assert(numins > 0);
-        if((size_t)numins + VECTOR_SIZE(*vecptr) < (size_t)numins ||
-           !vector_reserve((char*)vecptr, base_size, obj_size, VECTOR_SIZE(*vecptr)+numins, AL_TRUE))
-            return AL_FALSE;
-
-        /* NOTE: ins_pos may have been invalidated if *vecptr moved. Use ins_elem instead. */
-        if((size_t)ins_elem < (*vecptr)->Size)
-        {
-            memmove((char*)(*vecptr) + base_size + ((ins_elem+numins)*obj_size),
-                    (char*)(*vecptr) + base_size + ((ins_elem       )*obj_size),
-                    ((*vecptr)->Size-ins_elem)*obj_size);
-        }
-        memcpy((char*)(*vecptr) + base_size + (ins_elem*obj_size),
-               datstart, numins*obj_size);
-        (*vecptr)->Size += numins;
-    }
-    return AL_TRUE;
-}
-
-
-extern inline void al_string_deinit(al_string *str);
-extern inline size_t al_string_length(const_al_string str);
-extern inline ALboolean al_string_empty(const_al_string str);
-extern inline const al_string_char_type *al_string_get_cstr(const_al_string str);
-
-void al_string_clear(al_string *str)
-{
-    if(!al_string_empty(*str))
+    if(!alstr_empty(*str))
     {
         /* Reserve one more character than the total size of the string. This
          * is to ensure we have space to add a null terminator in the string
          * data so it can be used as a C-style string.
          */
-        VECTOR_RESERVE(*str, 1);
-        VECTOR_RESIZE(*str, 0);
-        *VECTOR_END(*str) = 0;
+        VECTOR_RESIZE(*str, 0, 1);
+        VECTOR_ELEM(*str, 0) = 0;
     }
 }
 
-static inline int al_string_compare(const al_string_char_type *str1, size_t str1len,
-                                    const al_string_char_type *str2, size_t str2len)
+static inline int alstr_compare(const al_string_char_type *str1, size_t str1len,
+                                const al_string_char_type *str2, size_t str2len)
 {
     size_t complen = (str1len < str2len) ? str1len : str2len;
     int ret = memcmp(str1, str2, complen);
@@ -842,108 +1034,121 @@ static inline int al_string_compare(const al_string_char_type *str1, size_t str1
     }
     return ret;
 }
-int al_string_cmp(const_al_string str1, const_al_string str2)
+int alstr_cmp(const_al_string str1, const_al_string str2)
 {
-    return al_string_compare(&VECTOR_FRONT(str1), al_string_length(str1),
-                             &VECTOR_FRONT(str2), al_string_length(str2));
+    return alstr_compare(&VECTOR_FRONT(str1), alstr_length(str1),
+                         &VECTOR_FRONT(str2), alstr_length(str2));
 }
-int al_string_cmp_cstr(const_al_string str1, const al_string_char_type *str2)
+int alstr_cmp_cstr(const_al_string str1, const al_string_char_type *str2)
 {
-    return al_string_compare(&VECTOR_FRONT(str1), al_string_length(str1),
-                             str2, strlen(str2));
-}
-
-void al_string_copy(al_string *str, const_al_string from)
-{
-    size_t len = al_string_length(from);
-    VECTOR_RESERVE(*str, len+1);
-    VECTOR_RESIZE(*str, 0);
-    VECTOR_INSERT(*str, VECTOR_END(*str), VECTOR_BEGIN(from), VECTOR_BEGIN(from)+len);
-    *VECTOR_END(*str) = 0;
+    return alstr_compare(&VECTOR_FRONT(str1), alstr_length(str1),
+                         str2, strlen(str2));
 }
 
-void al_string_copy_cstr(al_string *str, const al_string_char_type *from)
+void alstr_copy(al_string *str, const_al_string from)
+{
+    size_t len = alstr_length(from);
+    size_t i;
+
+    VECTOR_RESIZE(*str, len, len+1);
+    for(i = 0;i < len;i++)
+        VECTOR_ELEM(*str, i) = VECTOR_ELEM(from, i);
+    VECTOR_ELEM(*str, i) = 0;
+}
+
+void alstr_copy_cstr(al_string *str, const al_string_char_type *from)
 {
     size_t len = strlen(from);
-    VECTOR_RESERVE(*str, len+1);
-    VECTOR_RESIZE(*str, 0);
-    VECTOR_INSERT(*str, VECTOR_END(*str), from, from+len);
-    *VECTOR_END(*str) = 0;
+    size_t i;
+
+    VECTOR_RESIZE(*str, len, len+1);
+    for(i = 0;i < len;i++)
+        VECTOR_ELEM(*str, i) = from[i];
+    VECTOR_ELEM(*str, i) = 0;
 }
 
-void al_string_copy_range(al_string *str, const al_string_char_type *from, const al_string_char_type *to)
+void alstr_copy_range(al_string *str, const al_string_char_type *from, const al_string_char_type *to)
 {
     size_t len = to - from;
-    VECTOR_RESERVE(*str, len+1);
-    VECTOR_RESIZE(*str, 0);
-    VECTOR_INSERT(*str, VECTOR_END(*str), from, to);
-    *VECTOR_END(*str) = 0;
+    size_t i;
+
+    VECTOR_RESIZE(*str, len, len+1);
+    for(i = 0;i < len;i++)
+        VECTOR_ELEM(*str, i) = from[i];
+    VECTOR_ELEM(*str, i) = 0;
 }
 
-void al_string_append_char(al_string *str, const al_string_char_type c)
+void alstr_append_char(al_string *str, const al_string_char_type c)
 {
-    VECTOR_RESERVE(*str, al_string_length(*str)+2);
+    size_t len = alstr_length(*str);
+    VECTOR_RESIZE(*str, len, len+2);
     VECTOR_PUSH_BACK(*str, c);
-    *VECTOR_END(*str) = 0;
+    VECTOR_ELEM(*str, len+1) = 0;
 }
 
-void al_string_append_cstr(al_string *str, const al_string_char_type *from)
+void alstr_append_cstr(al_string *str, const al_string_char_type *from)
 {
     size_t len = strlen(from);
     if(len != 0)
     {
-        VECTOR_RESERVE(*str, al_string_length(*str)+len+1);
-        VECTOR_INSERT(*str, VECTOR_END(*str), from, from+len);
-        *VECTOR_END(*str) = 0;
+        size_t base = alstr_length(*str);
+        size_t i;
+
+        VECTOR_RESIZE(*str, base+len, base+len+1);
+        for(i = 0;i < len;i++)
+            VECTOR_ELEM(*str, base+i) = from[i];
+        VECTOR_ELEM(*str, base+i) = 0;
     }
 }
 
-void al_string_append_range(al_string *str, const al_string_char_type *from, const al_string_char_type *to)
+void alstr_append_range(al_string *str, const al_string_char_type *from, const al_string_char_type *to)
 {
-    if(to != from)
+    size_t len = to - from;
+    if(len != 0)
     {
-        VECTOR_RESERVE(*str, al_string_length(*str)+(to-from)+1);
-        VECTOR_INSERT(*str, VECTOR_END(*str), from, to);
-        *VECTOR_END(*str) = 0;
+        size_t base = alstr_length(*str);
+        size_t i;
+
+        VECTOR_RESIZE(*str, base+len, base+len+1);
+        for(i = 0;i < len;i++)
+            VECTOR_ELEM(*str, base+i) = from[i];
+        VECTOR_ELEM(*str, base+i) = 0;
     }
 }
 
 #ifdef _WIN32
-void al_string_copy_wcstr(al_string *str, const wchar_t *from)
+void alstr_copy_wcstr(al_string *str, const wchar_t *from)
 {
     int len;
     if((len=WideCharToMultiByte(CP_UTF8, 0, from, -1, NULL, 0, NULL, NULL)) > 0)
     {
-        VECTOR_RESERVE(*str, len);
-        VECTOR_RESIZE(*str, len-1);
+        VECTOR_RESIZE(*str, len-1, len);
         WideCharToMultiByte(CP_UTF8, 0, from, -1, &VECTOR_FRONT(*str), len, NULL, NULL);
-        *VECTOR_END(*str) = 0;
+        VECTOR_ELEM(*str, len-1) = 0;
     }
 }
 
-void al_string_append_wcstr(al_string *str, const wchar_t *from)
+void alstr_append_wcstr(al_string *str, const wchar_t *from)
 {
     int len;
     if((len=WideCharToMultiByte(CP_UTF8, 0, from, -1, NULL, 0, NULL, NULL)) > 0)
     {
-        size_t strlen = al_string_length(*str);
-        VECTOR_RESERVE(*str, strlen+len);
-        VECTOR_RESIZE(*str, strlen+len-1);
-        WideCharToMultiByte(CP_UTF8, 0, from, -1, &VECTOR_FRONT(*str) + strlen, len, NULL, NULL);
-        *VECTOR_END(*str) = 0;
+        size_t base = alstr_length(*str);
+        VECTOR_RESIZE(*str, base+len-1, base+len);
+        WideCharToMultiByte(CP_UTF8, 0, from, -1, &VECTOR_ELEM(*str, base), len, NULL, NULL);
+        VECTOR_ELEM(*str, base+len-1) = 0;
     }
 }
 
-void al_string_append_wrange(al_string *str, const wchar_t *from, const wchar_t *to)
+void alstr_append_wrange(al_string *str, const wchar_t *from, const wchar_t *to)
 {
     int len;
     if((len=WideCharToMultiByte(CP_UTF8, 0, from, (int)(to-from), NULL, 0, NULL, NULL)) > 0)
     {
-        size_t strlen = al_string_length(*str);
-        VECTOR_RESERVE(*str, strlen+len+1);
-        VECTOR_RESIZE(*str, strlen+len);
-        WideCharToMultiByte(CP_UTF8, 0, from, (int)(to-from), &VECTOR_FRONT(*str) + strlen, len+1, NULL, NULL);
-        *VECTOR_END(*str) = 0;
+        size_t base = alstr_length(*str);
+        VECTOR_RESIZE(*str, base+len, base+len+1);
+        WideCharToMultiByte(CP_UTF8, 0, from, (int)(to-from), &VECTOR_ELEM(*str, base), len+1, NULL, NULL);
+        VECTOR_ELEM(*str, base+len) = 0;
     }
 }
 #endif

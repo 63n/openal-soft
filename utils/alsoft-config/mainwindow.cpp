@@ -1,6 +1,8 @@
 
 #include "config.h"
 
+#include "version.h"
+
 #include <iostream>
 #include <cmath>
 
@@ -78,6 +80,10 @@ static const struct NameValuePair {
     { "6.1 Surround", "surround61" },
     { "7.1 Surround", "surround71" },
 
+    { "Ambisonic, 1st Order", "ambi1" },
+    { "Ambisonic, 2nd Order", "ambi2" },
+    { "Ambisonic, 3rd Order", "ambi3" },
+
     { "", "" }
 }, sampleTypeList[] = {
     { "Autodetect", "" },
@@ -94,9 +100,9 @@ static const struct NameValuePair {
     { "Point", "point" },
     { "Linear", "linear" },
     { "Default (Linear)", "" },
-    { "4-Point Sinc", "sinc4" },
-    { "8-Point Sinc", "sinc8" },
-    { "Band-limited Sinc", "bsinc" },
+    { "3rd order Sinc", "sinc4" },
+    { "11th order Sinc", "bsinc12" },
+    { "23rd order Sinc", "bsinc24" },
 
     { "", "" }
 }, stereoModeList[] = {
@@ -105,10 +111,17 @@ static const struct NameValuePair {
     { "Headphones", "headphones" },
 
     { "", "" }
-}, stereoPanList[] = {
+}, stereoEncList[] = {
     { "Default", "" },
+    { "Pan Pot", "panpot" },
     { "UHJ", "uhj" },
-    { "Pair-Wise", "paired" },
+
+    { "", "" }
+}, ambiFormatList[] = {
+    { "Default", "" },
+    { "ACN + SN3D", "acn+sn3d" },
+    { "ACN + N3D", "acn+n3d" },
+    { "Furse-Malham", "fuma" },
 
     { "", "" }
 };
@@ -222,9 +235,12 @@ MainWindow::MainWindow(QWidget *parent) :
     for(int i = 0;stereoModeList[i].name[0];i++)
         ui->stereoModeCombo->addItem(stereoModeList[i].name);
     ui->stereoModeCombo->adjustSize();
-    for(int i = 0;stereoPanList[i].name[0];i++)
-        ui->stereoPanningComboBox->addItem(stereoPanList[i].name);
-    ui->stereoPanningComboBox->adjustSize();
+    for(int i = 0;stereoEncList[i].name[0];i++)
+        ui->stereoEncodingComboBox->addItem(stereoEncList[i].name);
+    ui->stereoEncodingComboBox->adjustSize();
+    for(int i = 0;ambiFormatList[i].name[0];i++)
+        ui->ambiFormatComboBox->addItem(ambiFormatList[i].name);
+    ui->ambiFormatComboBox->adjustSize();
 
     int count;
     for(count = 0;resamplerList[count].name[0];count++) {
@@ -278,11 +294,11 @@ MainWindow::MainWindow(QWidget *parent) :
     mPeriodCountValidator = new QIntValidator(2, 16, this);
     ui->periodCountEdit->setValidator(mPeriodCountValidator);
 
-    mSourceCountValidator = new QIntValidator(0, 256, this);
+    mSourceCountValidator = new QIntValidator(0, 4096, this);
     ui->srcCountLineEdit->setValidator(mSourceCountValidator);
-    mEffectSlotValidator = new QIntValidator(0, 16, this);
+    mEffectSlotValidator = new QIntValidator(0, 64, this);
     ui->effectSlotLineEdit->setValidator(mEffectSlotValidator);
-    mSourceSendValidator = new QIntValidator(0, 4, this);
+    mSourceSendValidator = new QIntValidator(0, 16, this);
     ui->srcSendLineEdit->setValidator(mSourceSendValidator);
     mSampleRateValidator = new QIntValidator(8000, 192000, this);
     ui->sampleRateCombo->lineEdit()->setValidator(mSampleRateValidator);
@@ -311,16 +327,19 @@ MainWindow::MainWindow(QWidget *parent) :
     connect(ui->periodCountSlider, SIGNAL(valueChanged(int)), this, SLOT(updatePeriodCountEdit(int)));
     connect(ui->periodCountEdit, SIGNAL(editingFinished()), this, SLOT(updatePeriodCountSlider()));
 
-    connect(ui->stereoPanningComboBox, SIGNAL(currentIndexChanged(QString)), this, SLOT(enableApplyButton()));
+    connect(ui->stereoEncodingComboBox, SIGNAL(currentIndexChanged(QString)), this, SLOT(enableApplyButton()));
+    connect(ui->ambiFormatComboBox, SIGNAL(currentIndexChanged(QString)), this, SLOT(enableApplyButton()));
+    connect(ui->outputLimiterCheckBox, SIGNAL(stateChanged(int)), this, SLOT(enableApplyButton()));
+    connect(ui->outputDitherCheckBox, SIGNAL(stateChanged(int)), this, SLOT(enableApplyButton()));
 
-    connect(ui->decoderHQModeCheckBox, SIGNAL(stateChanged(int)), this, SLOT(toggleHqState(int)));
+    connect(ui->decoderHQModeCheckBox, SIGNAL(stateChanged(int)), this, SLOT(enableApplyButton()));
     connect(ui->decoderDistCompCheckBox, SIGNAL(stateChanged(int)), this, SLOT(enableApplyButton()));
+    connect(ui->decoderNFEffectsCheckBox, SIGNAL(stateChanged(int)), this, SLOT(enableApplyButton()));
+    connect(ui->decoderNFRefDelaySpinBox, SIGNAL(valueChanged(double)), this, SLOT(enableApplyButton()));
     connect(ui->decoderQuadLineEdit, SIGNAL(textChanged(QString)), this, SLOT(enableApplyButton()));
     connect(ui->decoderQuadButton, SIGNAL(clicked()), this, SLOT(selectQuadDecoderFile()));
     connect(ui->decoder51LineEdit, SIGNAL(textChanged(QString)), this, SLOT(enableApplyButton()));
     connect(ui->decoder51Button, SIGNAL(clicked()), this, SLOT(select51DecoderFile()));
-    connect(ui->decoder51RearLineEdit, SIGNAL(textChanged(QString)), this, SLOT(enableApplyButton()));
-    connect(ui->decoder51RearButton, SIGNAL(clicked()), this, SLOT(select51RearDecoderFile()));
     connect(ui->decoder61LineEdit, SIGNAL(textChanged(QString)), this, SLOT(enableApplyButton()));
     connect(ui->decoder61Button, SIGNAL(clicked()), this, SLOT(select61DecoderFile()));
     connect(ui->decoder71LineEdit, SIGNAL(textChanged(QString)), this, SLOT(enableApplyButton()));
@@ -446,7 +465,8 @@ void MainWindow::cancelCloseAction()
 void MainWindow::showAboutPage()
 {
     QMessageBox::information(this, tr("About"),
-        tr("OpenAL Soft Configuration Utility.\nBuilt for OpenAL Soft library version ")+(ALSOFT_VERSION ".")
+        tr("OpenAL Soft Configuration Utility.\nBuilt for OpenAL Soft library version ")+
+        (ALSOFT_VERSION "-" ALSOFT_GIT_COMMIT_HASH " (" ALSOFT_GIT_BRANCH " branch).")
     );
 }
 
@@ -454,6 +474,7 @@ void MainWindow::showAboutPage()
 QStringList MainWindow::collectHrtfs()
 {
     QStringList ret;
+    QStringList processed;
 
     for(int i = 0;i < ui->hrtfFileList->count();i++)
     {
@@ -463,13 +484,17 @@ QStringList MainWindow::collectHrtfs()
         {
             if(!fname.endsWith(".mhr", Qt::CaseInsensitive))
                 continue;
+            QString fullname = dir.absoluteFilePath(fname);
+            if(processed.contains(fullname))
+                continue;
+            processed.push_back(fullname);
 
             QString name = fname.left(fname.length()-4);
             if(!ret.contains(name))
                 ret.push_back(name);
             else
             {
-                size_t i = 1;
+                size_t i = 2;
                 do {
                     QString s = name+" #"+QString::number(i);
                     if(!ret.contains(s))
@@ -494,13 +519,17 @@ QStringList MainWindow::collectHrtfs()
             {
                 if(!fname.endsWith(".mhr", Qt::CaseInsensitive))
                     continue;
+                QString fullname = dir.absoluteFilePath(fname);
+                if(processed.contains(fullname))
+                    continue;
+                processed.push_back(fullname);
 
                 QString name = fname.left(fname.length()-4);
                 if(!ret.contains(name))
                     ret.push_back(name);
                 else
                 {
-                    size_t i = 1;
+                    size_t i = 2;
                     do {
                         QString s = name+" #"+QString::number(i);
                         if(!ret.contains(s))
@@ -513,6 +542,11 @@ QStringList MainWindow::collectHrtfs()
                 }
             }
         }
+
+#ifdef ALSOFT_EMBED_HRTF_DATA
+        ret.push_back("Built-In 44100hz");
+        ret.push_back("Built-In 48000hz");
+#endif
     }
     return ret;
 }
@@ -570,16 +604,22 @@ void MainWindow::loadConfig(const QString &fname)
     ui->srcSendLineEdit->insert(settings.value("sends").toString());
 
     QString resampler = settings.value("resampler").toString().trimmed();
-    ui->resamplerSlider->setValue(0);
-    /* The "cubic" resampler is no longer supported. It's been replaced by
-     * "sinc4". */
-    if(resampler == "cubic")
+    ui->resamplerSlider->setValue(2);
+    ui->resamplerLabel->setText(resamplerList[2].name);
+    /* The "cubic" and "sinc8" resamplers are no longer supported. Use "sinc4"
+     * as a fallback.
+     */
+    if(resampler == "cubic" || resampler == "sinc8")
         resampler = "sinc4";
+    /* The "bsinc" resampler name is an alias for "bsinc12". */
+    else if(resampler == "bsinc")
+        resampler = "bsinc12";
     for(int i = 0;resamplerList[i].name[0];i++)
     {
         if(resampler == resamplerList[i].value)
         {
             ui->resamplerSlider->setValue(i);
+            ui->resamplerLabel->setText(resamplerList[i].name);
             break;
         }
     }
@@ -612,15 +652,41 @@ void MainWindow::loadConfig(const QString &fname)
         updatePeriodCountSlider();
     }
 
-    QString stereopan = settings.value("stereo-panning").toString();
-    ui->stereoPanningComboBox->setCurrentIndex(0);
+    if(settings.value("output-limiter").isNull())
+        ui->outputLimiterCheckBox->setCheckState(Qt::PartiallyChecked);
+    else
+        ui->outputLimiterCheckBox->setCheckState(
+            settings.value("output-limiter").toBool() ? Qt::Checked : Qt::Unchecked
+        );
+
+    if(settings.value("dither").isNull())
+        ui->outputDitherCheckBox->setCheckState(Qt::PartiallyChecked);
+    else
+        ui->outputDitherCheckBox->setCheckState(
+            settings.value("dither").toBool() ? Qt::Checked : Qt::Unchecked
+        );
+
+    QString stereopan = settings.value("stereo-encoding").toString();
+    ui->stereoEncodingComboBox->setCurrentIndex(0);
     if(stereopan.isEmpty() == false)
     {
-        QString str = getNameFromValue(stereoPanList, stereopan);
+        QString str = getNameFromValue(stereoEncList, stereopan);
         if(!str.isEmpty())
         {
-            int j = ui->stereoPanningComboBox->findText(str);
-            if(j > 0) ui->stereoPanningComboBox->setCurrentIndex(j);
+            int j = ui->stereoEncodingComboBox->findText(str);
+            if(j > 0) ui->stereoEncodingComboBox->setCurrentIndex(j);
+        }
+    }
+
+    QString ambiformat = settings.value("ambi-format").toString();
+    ui->ambiFormatComboBox->setCurrentIndex(0);
+    if(ambiformat.isEmpty() == false)
+    {
+        QString str = getNameFromValue(ambiFormatList, ambiformat);
+        if(!str.isEmpty())
+        {
+            int j = ui->ambiFormatComboBox->findText(str);
+            if(j > 0) ui->ambiFormatComboBox->setCurrentIndex(j);
         }
     }
 
@@ -628,19 +694,21 @@ void MainWindow::loadConfig(const QString &fname)
     ui->decoderHQModeCheckBox->setChecked(hqmode);
     bool distcomp = settings.value("decoder/distance-comp", true).toBool();
     ui->decoderDistCompCheckBox->setChecked(distcomp);
-    ui->decoderDistCompCheckBox->setEnabled(hqmode);
+    bool nfeffects = settings.value("decoder/nfc", true).toBool();
+    ui->decoderNFEffectsCheckBox->setChecked(nfeffects);
+    double refdelay = settings.value("decoder/nfc-ref-delay", 0.0).toDouble();
+    ui->decoderNFRefDelaySpinBox->setValue(refdelay);
 
     ui->decoderQuadLineEdit->setText(settings.value("decoder/quad").toString());
     ui->decoder51LineEdit->setText(settings.value("decoder/surround51").toString());
-    ui->decoder51RearLineEdit->setText(settings.value("decoder/surround51rear").toString());
     ui->decoder61LineEdit->setText(settings.value("decoder/surround61").toString());
     ui->decoder71LineEdit->setText(settings.value("decoder/surround71").toString());
 
     QStringList disabledCpuExts = settings.value("disable-cpu-exts").toStringList();
     if(disabledCpuExts.size() == 1)
         disabledCpuExts = disabledCpuExts[0].split(QChar(','));
-    std::transform(disabledCpuExts.begin(), disabledCpuExts.end(),
-                   disabledCpuExts.begin(), std::mem_fun_ref(&QString::trimmed));
+    for(QStringList::iterator iter = disabledCpuExts.begin();iter != disabledCpuExts.end();iter++)
+        *iter = iter->trimmed();
     ui->enableSSECheckBox->setChecked(!disabledCpuExts.contains("sse", Qt::CaseInsensitive));
     ui->enableSSE2CheckBox->setChecked(!disabledCpuExts.contains("sse2", Qt::CaseInsensitive));
     ui->enableSSE3CheckBox->setChecked(!disabledCpuExts.contains("sse3", Qt::CaseInsensitive));
@@ -650,8 +718,8 @@ void MainWindow::loadConfig(const QString &fname)
     QStringList hrtf_paths = settings.value("hrtf-paths").toStringList();
     if(hrtf_paths.size() == 1)
         hrtf_paths = hrtf_paths[0].split(QChar(','));
-    std::transform(hrtf_paths.begin(), hrtf_paths.end(),
-                   hrtf_paths.begin(), std::mem_fun_ref(&QString::trimmed));
+    for(QStringList::iterator iter = hrtf_paths.begin();iter != hrtf_paths.end();iter++)
+        *iter = iter->trimmed();
     if(!hrtf_paths.empty() && !hrtf_paths.back().isEmpty())
         ui->defaultHrtfPathsCheckBox->setCheckState(Qt::Unchecked);
     else
@@ -706,8 +774,8 @@ void MainWindow::loadConfig(const QString &fname)
     {
         if(drivers.size() == 1)
             drivers = drivers[0].split(QChar(','));
-        std::transform(drivers.begin(), drivers.end(),
-                       drivers.begin(), std::mem_fun_ref(&QString::trimmed));
+        for(QStringList::iterator iter = drivers.begin();iter != drivers.end();iter++)
+            *iter = iter->trimmed();
 
         bool lastWasEmpty = false;
         foreach(const QString &backend, drivers)
@@ -759,8 +827,8 @@ void MainWindow::loadConfig(const QString &fname)
     QStringList excludefx = settings.value("excludefx").toStringList();
     if(excludefx.size() == 1)
         excludefx = excludefx[0].split(QChar(','));
-    std::transform(excludefx.begin(), excludefx.end(),
-                   excludefx.begin(), std::mem_fun_ref(&QString::trimmed));
+    for(QStringList::iterator iter = excludefx.begin();iter != excludefx.end();iter++)
+        *iter = iter->trimmed();
     ui->enableEaxReverbCheck->setChecked(!excludefx.contains("eaxreverb", Qt::CaseInsensitive));
     ui->enableStdReverbCheck->setChecked(!excludefx.contains("reverb", Qt::CaseInsensitive));
     ui->enableChorusCheck->setChecked(!excludefx.contains("chorus", Qt::CaseInsensitive));
@@ -850,7 +918,24 @@ void MainWindow::saveConfig(const QString &fname) const
     settings.setValue("resampler", resamplerList[ui->resamplerSlider->value()].value);
 
     settings.setValue("stereo-mode", getValueFromName(stereoModeList, ui->stereoModeCombo->currentText()));
-    settings.setValue("stereo-panning", getValueFromName(stereoPanList, ui->stereoPanningComboBox->currentText()));
+    settings.setValue("stereo-encoding", getValueFromName(stereoEncList, ui->stereoEncodingComboBox->currentText()));
+    settings.setValue("ambi-format", getValueFromName(ambiFormatList, ui->ambiFormatComboBox->currentText()));
+
+    Qt::CheckState limiter = ui->outputLimiterCheckBox->checkState();
+    if(limiter == Qt::PartiallyChecked)
+        settings.setValue("output-limiter", QString());
+    else if(limiter == Qt::Checked)
+        settings.setValue("output-limiter", QString("true"));
+    else if(limiter == Qt::Unchecked)
+        settings.setValue("output-limiter", QString("false"));
+
+    Qt::CheckState dither = ui->outputDitherCheckBox->checkState();
+    if(dither == Qt::PartiallyChecked)
+        settings.setValue("dither", QString());
+    else if(dither == Qt::Checked)
+        settings.setValue("dither", QString("true"));
+    else if(dither == Qt::Unchecked)
+        settings.setValue("dither", QString("false"));
 
     settings.setValue("decoder/hq-mode",
         ui->decoderHQModeCheckBox->isChecked() ? QString("true") : QString(/*"false"*/)
@@ -858,10 +943,16 @@ void MainWindow::saveConfig(const QString &fname) const
     settings.setValue("decoder/distance-comp",
         ui->decoderDistCompCheckBox->isChecked() ? QString(/*"true"*/) : QString("false")
     );
+    settings.setValue("decoder/nfc",
+        ui->decoderNFEffectsCheckBox->isChecked() ? QString(/*"true"*/) : QString("false")
+    );
+    double refdelay = ui->decoderNFRefDelaySpinBox->value();
+    settings.setValue("decoder/nfc-ref-delay",
+        (refdelay > 0.0) ? QString::number(refdelay) : QString()
+    );
 
     settings.setValue("decoder/quad", ui->decoderQuadLineEdit->text());
     settings.setValue("decoder/surround51", ui->decoder51LineEdit->text());
-    settings.setValue("decoder/surround51rear", ui->decoder51RearLineEdit->text());
     settings.setValue("decoder/surround61", ui->decoder61LineEdit->text());
     settings.setValue("decoder/surround71", ui->decoder71LineEdit->text());
 
@@ -1074,18 +1165,10 @@ void MainWindow::updatePeriodCountSlider()
 }
 
 
-void MainWindow::toggleHqState(int state)
-{
-    ui->decoderDistCompCheckBox->setEnabled(state);
-    enableApplyButton();
-}
-
 void MainWindow::selectQuadDecoderFile()
 { selectDecoderFile(ui->decoderQuadLineEdit, "Select Quadrophonic Decoder");}
 void MainWindow::select51DecoderFile()
-{ selectDecoderFile(ui->decoder51LineEdit, "Select 5.1 Surround (Side) Decoder");}
-void MainWindow::select51RearDecoderFile()
-{ selectDecoderFile(ui->decoder51RearLineEdit, "Select 5.1 Surround (Rear) Decoder");}
+{ selectDecoderFile(ui->decoder51LineEdit, "Select 5.1 Surround Decoder");}
 void MainWindow::select61DecoderFile()
 { selectDecoderFile(ui->decoder61LineEdit, "Select 6.1 Surround Decoder");}
 void MainWindow::select71DecoderFile()

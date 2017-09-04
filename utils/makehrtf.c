@@ -2,7 +2,7 @@
  * HRTF utility for producing and demonstrating the process of creating an
  * OpenAL Soft compatible HRIR data set.
  *
- * Copyright (C) 2011-2014  Christopher Fitzgerald
+ * Copyright (C) 2011-2017  Christopher Fitzgerald
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -60,19 +60,38 @@
 
 #include "config.h"
 
+#define _UNICODE
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include <string.h>
+#include <limits.h>
 #include <ctype.h>
 #include <math.h>
 #ifdef HAVE_STRINGS_H
 #include <strings.h>
 #endif
+#ifdef HAVE_GETOPT
+#include <unistd.h>
+#else
+#include "getopt.h"
+#endif
 
-// Rely (if naively) on OpenAL's header for the types used for serialization.
-#include "AL/al.h"
-#include "AL/alext.h"
+#include "win_main_utf8.h"
+
+/* Define int64_t and uint64_t types */
+#if defined(__STDC_VERSION__) && __STDC_VERSION__ >= 199901L
+#include <inttypes.h>
+#elif defined(_WIN32) && defined(__GNUC__)
+#include <stdint.h>
+#elif defined(_WIN32)
+typedef __int64 int64_t;
+typedef unsigned __int64 uint64_t;
+#else
+/* Fallback if nothing above works */
+#include <inttypes.h>
+#endif
 
 #ifndef M_PI
 #define M_PI                         (3.14159265358979323846)
@@ -82,8 +101,9 @@
 #define HUGE_VAL                     (1.0 / 0.0)
 #endif
 
+
 // The epsilon used to maintain signal stability.
-#define EPSILON                      (1e-15)
+#define EPSILON                      (1e-9)
 
 // Constants for accessing the token reader's ring buffer.
 #define TR_RING_BITS                 (16)
@@ -145,16 +165,16 @@
 #define MAX_ASCII_BITS               (32)
 
 // The limits to the FFT window size override on the command line.
-#define MIN_FFTSIZE                  (512)
-#define MAX_FFTSIZE                  (16384)
+#define MIN_FFTSIZE                  (65536)
+#define MAX_FFTSIZE                  (131072)
 
 // The limits to the equalization range limit on the command line.
 #define MIN_LIMIT                    (2.0)
 #define MAX_LIMIT                    (120.0)
 
 // The limits to the truncation window size on the command line.
-#define MIN_TRUNCSIZE                (8)
-#define MAX_TRUNCSIZE                (128)
+#define MIN_TRUNCSIZE                (16)
+#define MAX_TRUNCSIZE                (512)
 
 // The limits to the custom head radius on the command line.
 #define MIN_CUSTOM_RADIUS            (0.05)
@@ -165,6 +185,7 @@
 #define MOD_TRUNCSIZE                (8)
 
 // The defaults for the command line options.
+#define DEFAULT_FFTSIZE              (65536)
 #define DEFAULT_EQUALIZE             (1)
 #define DEFAULT_SURFACE              (1)
 #define DEFAULT_LIMIT                (24.0)
@@ -193,6 +214,19 @@
 // The OpenAL Soft HRTF format marker.  It stands for minimum-phase head
 // response protocol 01.
 #define MHR_FORMAT                   ("MinPHR01")
+
+#define MHR_FORMAT_EXPERIMENTAL      ("MinPHRTEMPDONOTUSE")
+
+// Sample and channel type enum values
+typedef enum SampleTypeT {
+    ST_S16 = 0,
+    ST_S24 = 1
+} SampleTypeT;
+
+typedef enum ChannelTypeT {
+    CT_LEFTONLY  = 0,
+    CT_LEFTRIGHT = 1
+} ChannelTypeT;
 
 // Byte order for the serialization routines.
 typedef enum ByteOrderT {
@@ -224,20 +258,14 @@ typedef enum HeadModelT {
     HM_SPHERE   // Calculate the onset using a spherical head model.
 } HeadModelT;
 
-// Desired output format from the command line.
-typedef enum OutputFormatT {
-    OF_NONE,
-    OF_MHR   // OpenAL Soft MHR data set file.
-} OutputFormatT;
-
 // Unsigned integer type.
 typedef unsigned int uint;
 
 // Serialization types.  The trailing digit indicates the number of bits.
-typedef ALubyte      uint8;
-typedef ALint        int32;
-typedef ALuint       uint32;
-typedef ALuint64SOFT uint64;
+typedef unsigned char uint8;
+typedef int           int32;
+typedef unsigned int  uint32;
+typedef uint64_t      uint64;
 
 // Token reader state for parsing the data set definition.
 typedef struct TokenReaderT {
@@ -266,6 +294,8 @@ typedef struct SourceRefT {
 // the resulting HRTF.
 typedef struct HrirDataT {
     uint mIrRate;
+    SampleTypeT mSampleType;
+    ChannelTypeT mChannelType;
     uint mIrCount;
     uint mIrSize;
     uint mIrPoints;
@@ -287,6 +317,66 @@ typedef struct ResamplerT {
     double *mF;
 } ResamplerT;
 
+
+/****************************************
+ *** Complex number type and routines ***
+ ****************************************/
+
+typedef struct {
+    double Real, Imag;
+} Complex;
+
+static Complex MakeComplex(double r, double i)
+{
+    Complex c = { r, i };
+    return c;
+}
+
+static Complex c_add(Complex a, Complex b)
+{
+    Complex r;
+    r.Real = a.Real + b.Real;
+    r.Imag = a.Imag + b.Imag;
+    return r;
+}
+
+static Complex c_sub(Complex a, Complex b)
+{
+    Complex r;
+    r.Real = a.Real - b.Real;
+    r.Imag = a.Imag - b.Imag;
+    return r;
+}
+
+static Complex c_mul(Complex a, Complex b)
+{
+    Complex r;
+    r.Real = a.Real*b.Real - a.Imag*b.Imag;
+    r.Imag = a.Imag*b.Real + a.Real*b.Imag;
+    return r;
+}
+
+static Complex c_muls(Complex a, double s)
+{
+    Complex r;
+    r.Real = a.Real * s;
+    r.Imag = a.Imag * s;
+    return r;
+}
+
+static double c_abs(Complex a)
+{
+    return sqrt(a.Real*a.Real + a.Imag*a.Imag);
+}
+
+static Complex c_exp(Complex a)
+{
+    Complex r;
+    double e = exp(a.Real);
+    r.Real = e * cos(a.Imag);
+    r.Imag = e * sin(a.Imag);
+    return r;
+}
 
 /*****************************
  *** Token reader routines ***
@@ -814,18 +904,22 @@ static double Lerp(const double a, const double b, const double f)
     return a + (f * (b - a));
 }
 
-// Performs a high-passed triangular probability density function dither from
-// a double to an integer.  It assumes the input sample is already scaled.
-static int HpTpdfDither(const double in, int *hpHist)
+static inline uint dither_rng(uint *seed)
 {
-    static const double PRNG_SCALE = 1.0 / (RAND_MAX+1.0);
-    int prn;
-    double out;
+    *seed = (*seed * 96314165) + 907633515;
+    return *seed;
+}
 
-    prn = rand();
-    out = round(in + (PRNG_SCALE * (prn - *hpHist)));
-    *hpHist = prn;
-    return (int)out;
+// Performs a triangular probability density function dither. It assumes the
+// input sample is already scaled.
+static inline double TpdfDither(const double in, uint *seed)
+{
+    static const double PRNG_SCALE = 1.0 / UINT_MAX;
+    uint prn0, prn1;
+
+    prn0 = dither_rng(seed);
+    prn1 = dither_rng(seed);
+    return round(in + (prn0*PRNG_SCALE - prn1*PRNG_SCALE));
 }
 
 // Allocates an array of doubles.
@@ -847,41 +941,17 @@ static double *CreateArray(size_t n)
 static void DestroyArray(double *a)
 { free(a); }
 
-// Complex number routines.  All outputs must be non-NULL.
-
-// Magnitude/absolute value.
-static double ComplexAbs(const double r, const double i)
-{
-    return sqrt(r*r + i*i);
-}
-
-// Multiply.
-static void ComplexMul(const double aR, const double aI, const double bR, const double bI, double *outR, double *outI)
-{
-    *outR = (aR * bR) - (aI * bI);
-    *outI = (aI * bR) + (aR * bI);
-}
-
-// Base-e exponent.
-static void ComplexExp(const double inR, const double inI, double *outR, double *outI)
-{
-    double e = exp(inR);
-    *outR = e * cos(inI);
-    *outI = e * sin(inI);
-}
-
 /* Fast Fourier transform routines.  The number of points must be a power of
  * two.  In-place operation is possible only if both the real and imaginary
  * parts are in-place together.
  */
 
 // Performs bit-reversal ordering.
-static void FftArrange(const uint n, const double *inR, const double *inI, double *outR, double *outI)
+static void FftArrange(const uint n, const Complex *in, Complex *out)
 {
     uint rk, k, m;
-    double tempR, tempI;
 
-    if(inR == outR && inI == outI)
+    if(in == out)
     {
         // Handle in-place arrangement.
         rk = 0;
@@ -889,12 +959,9 @@ static void FftArrange(const uint n, const double *inR, const double *inI, doubl
         {
             if(rk > k)
             {
-                tempR = inR[rk];
-                tempI = inI[rk];
-                outR[rk] = inR[k];
-                outI[rk] = inI[k];
-                outR[k] = tempR;
-                outI[k] = tempI;
+                Complex temp = in[rk];
+                out[rk] = in[k];
+                out[k] = temp;
             }
             m = n;
             while(rk&(m >>= 1))
@@ -908,8 +975,7 @@ static void FftArrange(const uint n, const double *inR, const double *inI, doubl
         rk = 0;
         for(k = 0;k < n;k++)
         {
-            outR[rk] = inR[k];
-            outI[rk] = inI[k];
+            out[rk] = in[k];
             m = n;
             while(rk&(m >>= 1))
                 rk &= ~m;
@@ -919,114 +985,83 @@ static void FftArrange(const uint n, const double *inR, const double *inI, doubl
 }
 
 // Performs the summation.
-static void FftSummation(const uint n, const double s, double *re, double *im)
+static void FftSummation(const int n, const double s, Complex *cplx)
 {
     double pi;
-    uint m, m2;
-    double vR, vI, wR, wI;
-    uint i, k, mk;
-    double tR, tI;
+    int m, m2;
+    int i, k, mk;
 
     pi = s * M_PI;
     for(m = 1, m2 = 2;m < n; m <<= 1, m2 <<= 1)
     {
         // v = Complex (-2.0 * sin (0.5 * pi / m) * sin (0.5 * pi / m), -sin (pi / m))
-        vR = sin(0.5 * pi / m);
-        vR = -2.0 * vR * vR;
-        vI = -sin(pi / m);
-        // w = Complex (1.0, 0.0)
-        wR = 1.0;
-        wI = 0.0;
+        double sm = sin(0.5 * pi / m);
+        Complex v = MakeComplex(-2.0*sm*sm, -sin(pi / m));
+        Complex w = MakeComplex(1.0, 0.0);
         for(i = 0;i < m;i++)
         {
             for(k = i;k < n;k += m2)
             {
+                Complex t;
                 mk = k + m;
-                // t = ComplexMul(w, out[km2])
-                tR = (wR * re[mk]) - (wI * im[mk]);
-                tI = (wR * im[mk]) + (wI * re[mk]);
-                // out[mk] = ComplexSub (out [k], t)
-                re[mk] = re[k] - tR;
-                im[mk] = im[k] - tI;
-                // out[k] = ComplexAdd (out [k], t)
-                re[k] += tR;
-                im[k] += tI;
+                t = c_mul(w, cplx[mk]);
+                cplx[mk] = c_sub(cplx[k], t);
+                cplx[k] = c_add(cplx[k], t);
             }
-            // t = ComplexMul (v, w)
-            tR = (vR * wR) - (vI * wI);
-            tI = (vR * wI) + (vI * wR);
-            // w = ComplexAdd (w, t)
-            wR += tR;
-            wI += tI;
+            w = c_add(w, c_mul(v, w));
         }
     }
 }
 
 // Performs a forward FFT.
-static void FftForward(const uint n, const double *inR, const double *inI, double *outR, double *outI)
+static void FftForward(const uint n, const Complex *in, Complex *out)
 {
-    FftArrange(n, inR, inI, outR, outI);
-    FftSummation(n, 1.0, outR, outI);
+    FftArrange(n, in, out);
+    FftSummation(n, 1.0, out);
 }
 
 // Performs an inverse FFT.
-static void FftInverse(const uint n, const double *inR, const double *inI, double *outR, double *outI)
+static void FftInverse(const uint n, const Complex *in, Complex *out)
 {
     double f;
     uint i;
 
-    FftArrange(n, inR, inI, outR, outI);
-    FftSummation(n, -1.0, outR, outI);
+    FftArrange(n, in, out);
+    FftSummation(n, -1.0, out);
     f = 1.0 / n;
     for(i = 0;i < n;i++)
-    {
-        outR[i] *= f;
-        outI[i] *= f;
-    }
+        out[i] = c_muls(out[i], f);
 }
 
-/* Calculate the complex helical sequence (or discrete-time analytical
- * signal) of the given input using the Hilbert transform.  Given the
- * negative natural logarithm of a signal's magnitude response, the imaginary
- * components can be used as the angles for minimum-phase reconstruction.
+/* Calculate the complex helical sequence (or discrete-time analytical signal)
+ * of the given input using the Hilbert transform. Given the natural logarithm
+ * of a signal's magnitude response, the imaginary components can be used as
+ * the angles for minimum-phase reconstruction.
  */
-static void Hilbert(const uint n, const double *in, double *outR, double *outI)
+static void Hilbert(const uint n, const Complex *in, Complex *out)
 {
     uint i;
 
-    if(in == outR)
+    if(in == out)
     {
         // Handle in-place operation.
         for(i = 0;i < n;i++)
-            outI[i] = 0.0;
+            out[i].Imag = 0.0;
     }
     else
     {
         // Handle copy operation.
         for(i = 0;i < n;i++)
-        {
-            outR[i] = in[i];
-            outI[i] = 0.0;
-        }
+            out[i] = MakeComplex(in[i].Real, 0.0);
     }
-    FftForward(n, outR, outI, outR, outI);
-    /* Currently the Fourier routines operate only on point counts that are
-     * powers of two.  If that changes and n is odd, the following conditional
-     * should be:  i < (n + 1) / 2.
-     */
-    for(i = 1;i < (n/2);i++)
-    {
-        outR[i] *= 2.0;
-        outI[i] *= 2.0;
-    }
-    // If n is odd, the following increment should be skipped.
-    i++;
+    FftInverse(n, out, out);
+    for(i = 1;i < (n+1)/2;i++)
+        out[i] = c_muls(out[i], 2.0);
+    /* Increment i if n is even. */
+    i += (n&1)^1;
     for(;i < n;i++)
-    {
-        outR[i] = 0.0;
-        outI[i] = 0.0;
-    }
-    FftInverse(n, outR, outI, outR, outI);
+        out[i] = MakeComplex(0.0, 0.0);
+    FftForward(n, out, out);
 }
 
 /* Calculate the magnitude response of the given input.  This is used in
@@ -1034,12 +1069,12 @@ static void Hilbert(const uint n, const double *in, double *outR, double *outI)
  * minimum phase reconstruction.  The mirrored half of the response is also
  * discarded.
  */
-static void MagnitudeResponse(const uint n, const double *inR, const double *inI, double *out)
+static void MagnitudeResponse(const uint n, const Complex *in, double *out)
 {
     const uint m = 1 + (n / 2);
     uint i;
     for(i = 0;i < m;i++)
-        out[i] = fmax(ComplexAbs(inR[i], inI[i]), EPSILON);
+        out[i] = fmax(c_abs(in[i]), EPSILON);
 }
 
 /* Apply a range limit (in dB) to the given magnitude response.  This is used
@@ -1077,32 +1112,30 @@ static void LimitMagnitudeResponse(const uint n, const double limit, const doubl
  * residuals (which were discarded).  The mirrored half of the response is
  * reconstructed.
  */
-static void MinimumPhase(const uint n, const double *in, double *outR, double *outI)
+static void MinimumPhase(const uint n, const double *in, Complex *out)
 {
     const uint m = 1 + (n / 2);
-    double aR, aI;
     double *mags;
     uint i;
 
     mags = CreateArray(n);
     for(i = 0;i < m;i++)
     {
-        mags[i] = fmax(in[i], EPSILON);
-        outR[i] = -log(mags[i]);
+        mags[i] = fmax(EPSILON, in[i]);
+        out[i] = MakeComplex(log(mags[i]), 0.0);
     }
     for(;i < n;i++)
     {
         mags[i] = mags[n - i];
-        outR[i] = outR[n - i];
+        out[i] = out[n - i];
     }
-    Hilbert(n, outR, outR, outI);
+    Hilbert(n, out, out);
     // Remove any DC offset the filter has.
-    outR[0] = 0.0;
-    outI[0] = 0.0;
-    for(i = 1;i < n;i++)
+    mags[0] = EPSILON;
+    for(i = 0;i < n;i++)
     {
-        ComplexExp(0.0, outI[i], &aR, &aI);
-        ComplexMul(mags[i], 0.0, aR, aI, &outR[i], &outI[i]);
+        Complex a = c_exp(MakeComplex(0.0, out[i].Imag));
+        out[i] = c_mul(MakeComplex(mags[i], 0.0), a);
     }
     DestroyArray(mags);
 }
@@ -1267,23 +1300,24 @@ static void ResamplerSetup(ResamplerT *rs, const uint srcRate, const uint dstRat
     rs->mP = dstRate / gcd;
     rs->mQ = srcRate / gcd;
     /* The cutoff is adjusted by half the transition width, so the transition
-    * ends before the nyquist (0.5).  Both are scaled by the downsampling
-    * factor.
-    */
+     * ends before the nyquist (0.5).  Both are scaled by the downsampling
+     * factor.
+     */
     if(rs->mP > rs->mQ)
     {
-        cutoff = 0.45 / rs->mP;
-        width = 0.1 / rs->mP;
+        cutoff = 0.475 / rs->mP;
+        width = 0.05 / rs->mP;
     }
     else
     {
-        cutoff = 0.45 / rs->mQ;
-        width = 0.1 / rs->mQ;
+        cutoff = 0.475 / rs->mQ;
+        width = 0.05 / rs->mQ;
     }
-    // A rejection of -180 dB is used for the stop band.
-    l = CalcKaiserOrder(180.0, width) / 2;
+    // A rejection of -180 dB is used for the stop band. Round up when
+    // calculating the left offset to avoid increasing the transition width.
+    l = (CalcKaiserOrder(180.0, width)+1) / 2;
     beta = CalcKaiserBeta(180.0);
-    rs->mM = (2 * l) + 1;
+    rs->mM = l*2 + 1;
     rs->mL = l;
     rs->mF = CreateArray(rs->mM);
     for(i = 0;i < ((int)rs->mM);i++)
@@ -1335,7 +1369,7 @@ static void ResamplerRun(ResamplerT *rs, const uint inN, const double *in, const
         work[i] = r;
     }
     // Clean up after in-place operation.
-    if(in == out)
+    if(work != out)
     {
         for(i = 0;i < outN;i++)
             out[i] = work[i];
@@ -1868,21 +1902,29 @@ static int WriteBin4(const ByteOrderT order, const uint bytes, const uint32 in, 
 }
 
 // Store the OpenAL Soft HRTF data set.
-static int StoreMhr(const HrirDataT *hData, const char *filename)
+static int StoreMhr(const HrirDataT *hData, const int experimental, const char *filename)
 {
     uint e, step, end, n, j, i;
-    int hpHist, v;
+    uint dither_seed;
     FILE *fp;
+    int v;
 
     if((fp=fopen(filename, "wb")) == NULL)
     {
         fprintf(stderr, "Error: Could not open MHR file '%s'.\n", filename);
         return 0;
     }
-    if(!WriteAscii(MHR_FORMAT, fp, filename))
+    if(!WriteAscii(experimental ? MHR_FORMAT_EXPERIMENTAL : MHR_FORMAT, fp, filename))
         return 0;
     if(!WriteBin4(BO_LITTLE, 4, (uint32)hData->mIrRate, fp, filename))
         return 0;
+    if(experimental)
+    {
+        if(!WriteBin4(BO_LITTLE, 1, (uint32)hData->mSampleType, fp, filename))
+            return 0;
+        if(!WriteBin4(BO_LITTLE, 1, (uint32)hData->mChannelType, fp, filename))
+            return 0;
+    }
     if(!WriteBin4(BO_LITTLE, 1, (uint32)hData->mIrPoints, fp, filename))
         return 0;
     if(!WriteBin4(BO_LITTLE, 1, (uint32)hData->mEvCount, fp, filename))
@@ -1895,14 +1937,20 @@ static int StoreMhr(const HrirDataT *hData, const char *filename)
     step = hData->mIrSize;
     end = hData->mIrCount * step;
     n = hData->mIrPoints;
-    srand(0x31DF840C);
+    dither_seed = 22222;
     for(j = 0;j < end;j += step)
     {
-        hpHist = 0;
+        const double scale = (!experimental || hData->mSampleType == ST_S16) ? 32767.0 :
+                             ((hData->mSampleType == ST_S24) ? 8388607.0 : 0.0);
+        const int bps = (!experimental || hData->mSampleType == ST_S16) ? 2 :
+                        ((hData->mSampleType == ST_S24) ? 3 : 0);
+        double out[MAX_TRUNCSIZE];
+        for(i = 0;i < n;i++)
+            out[i] = TpdfDither(scale * hData->mHrirs[j+i], &dither_seed);
         for(i = 0;i < n;i++)
         {
-            v = HpTpdfDither(32767.0 * hData->mHrirs[j+i], &hpHist);
-            if(!WriteBin4(BO_LITTLE, 2, (uint32)v, fp, filename))
+            v = (int)Clamp(out[i], -scale-1.0, scale);
+            if(!WriteBin4(BO_LITTLE, bps, (uint32)v, fp, filename))
                 return 0;
         }
     }
@@ -1946,30 +1994,25 @@ static void AverageHrirOnset(const double *hrir, const double f, const uint ei, 
 // existing responses for its elevation and azimuth.
 static void AverageHrirMagnitude(const double *hrir, const double f, const uint ei, const uint ai, const HrirDataT *hData)
 {
-    double *re, *im;
     uint n, m, i, j;
+    Complex *cplx;
+    double *mags;
 
     n = hData->mFftSize;
-    re = CreateArray(n);
-    im = CreateArray(n);
+    cplx = calloc(sizeof(*cplx), n);
+    mags = calloc(sizeof(*mags), n);
     for(i = 0;i < hData->mIrPoints;i++)
-    {
-        re[i] = hrir[i];
-        im[i] = 0.0;
-    }
+        cplx[i] = MakeComplex(hrir[i], 0.0);
     for(;i < n;i++)
-    {
-        re[i] = 0.0;
-        im[i] = 0.0;
-    }
-    FftForward(n, re, im, re, im);
-    MagnitudeResponse(n, re, im, re);
+        cplx[i] = MakeComplex(0.0, 0.0);
+    FftForward(n, cplx, cplx);
+    MagnitudeResponse(n, cplx, mags);
     m = 1 + (n / 2);
     j = (hData->mEvOffset[ei] + ai) * hData->mIrSize;
     for(i = 0;i < m;i++)
-        hData->mHrirs[j+i] = Lerp(hData->mHrirs[j+i], re[i], f);
-    DestroyArray(im);
-    DestroyArray(re);
+        hData->mHrirs[j+i] = Lerp(hData->mHrirs[j+i], mags[i], f);
+    free(mags);
+    free(cplx);
 }
 
 /* Calculate the contribution of each HRIR to the diffuse-field average based
@@ -2089,23 +2132,34 @@ static void DiffuseFieldEqualize(const double *dfa, const HrirDataT *hData)
 static void ReconstructHrirs(const HrirDataT *hData)
 {
     uint step, start, end, n, j, i;
-    double *re, *im;
+    uint pcdone, lastpc;
+    Complex *cplx;
+
+    pcdone = lastpc = 0;
+    printf("%3d%% done.", pcdone);
+    fflush(stdout);
 
     step = hData->mIrSize;
     start = hData->mEvOffset[hData->mEvStart] * step;
     end = hData->mIrCount * step;
     n = hData->mFftSize;
-    re = CreateArray(n);
-    im = CreateArray(n);
+    cplx = calloc(sizeof(*cplx), n);
     for(j = start;j < end;j += step)
     {
-        MinimumPhase(n, &hData->mHrirs[j], re, im);
-        FftInverse(n, re, im, re, im);
+        MinimumPhase(n, &hData->mHrirs[j], cplx);
+        FftInverse(n, cplx, cplx);
         for(i = 0;i < hData->mIrPoints;i++)
-            hData->mHrirs[j+i] = re[i];
+            hData->mHrirs[j+i] = cplx[i].Real;
+        pcdone = (j+step-start) * 100 / (end-start);
+        if(pcdone != lastpc)
+        {
+            lastpc = pcdone;
+            printf("\r%3d%% done.", pcdone);
+            fflush(stdout);
+        }
     }
-    DestroyArray (im);
-    DestroyArray (re);
+    free(cplx);
+    printf("\n");
 }
 
 // Resamples the HRIRs for use at the given sampling rate.
@@ -2361,14 +2415,10 @@ static int ProcessMetrics(TokenReaderT *tr, const uint fftSize, const uint trunc
                 return 0;
             }
             hData->mIrPoints = points;
-            hData->mFftSize = fftSize;
             if(fftSize <= 0)
             {
-                points = 1;
-                while(points < (4 * hData->mIrPoints))
-                    points <<= 1;
-                hData->mFftSize = points;
-                hData->mIrSize = 1 + (points / 2);
+                hData->mFftSize = DEFAULT_FFTSIZE;
+                hData->mIrSize = 1 + (DEFAULT_FFTSIZE / 2);
             }
             else
             {
@@ -2621,7 +2671,12 @@ static int ProcessSources(const HeadModelT model, TokenReaderT *tr, HrirDataT *h
     SourceRefT src;
     double factor;
     double *hrir;
+    int count;
 
+    printf("Loading sources...");
+    fflush(stdout);
+
+    count = 0;
     setCount = (uint*)calloc(hData->mEvCount, sizeof(uint));
     setFlag = (uint*)calloc(hData->mIrCount, sizeof(uint));
     hrir = CreateArray(hData->mIrPoints);
@@ -2646,6 +2701,14 @@ static int ProcessSources(const HeadModelT model, TokenReaderT *tr, HrirDataT *h
         {
             if(!ReadSourceRef(tr, &src))
                 goto error;
+
+            // TODO: Would be nice to display 'x of y files', but that would
+            // require preparing the source refs first to get a total count
+            // before loading them.
+            ++count;
+            printf("\rLoading sources... %d file%s", count, (count==1)?"":"s");
+            fflush(stdout);
+
             if(!LoadSource(&src, hData->mIrRate, hData->mIrPoints, hrir))
                 goto error;
 
@@ -2660,6 +2723,7 @@ static int ProcessSources(const HeadModelT model, TokenReaderT *tr, HrirDataT *h
         setFlag[hData->mEvOffset[ei] + ai] = 1;
         setCount[ei]++;
     }
+    printf("\n");
 
     ei = 0;
     while(ei < hData->mEvCount && setCount[ei] < 1)
@@ -2697,15 +2761,17 @@ error:
  * resulting data set as desired.  If the input name is NULL it will read
  * from standard input.
  */
-static int ProcessDefinition(const char *inName, const uint outRate, const uint fftSize, const int equalize, const int surface, const double limit, const uint truncSize, const HeadModelT model, const double radius, const OutputFormatT outFormat, const char *outName)
+static int ProcessDefinition(const char *inName, const uint outRate, const uint fftSize, const int equalize, const int surface, const double limit, const uint truncSize, const HeadModelT model, const double radius, const int experimental, const char *outName)
 {
     char rateStr[8+1], expName[MAX_PATH_LEN];
     TokenReaderT tr;
     HrirDataT hData;
-    double *dfa;
     FILE *fp;
+    int ret;
 
     hData.mIrRate = 0;
+    hData.mSampleType = ST_S24;
+    hData.mChannelType = CT_LEFTONLY;
     hData.mIrPoints = 0;
     hData.mFftSize = 0;
     hData.mIrSize = 0;
@@ -2713,7 +2779,7 @@ static int ProcessDefinition(const char *inName, const uint outRate, const uint 
     hData.mEvCount = 0;
     hData.mRadius = 0;
     hData.mDistance = 0;
-    fprintf(stdout, "Reading HRIR definition...\n");
+    fprintf(stdout, "Reading HRIR definition from %s...\n", inName?inName:"stdin");
     if(inName != NULL)
     {
         fp = fopen(inName, "r");
@@ -2735,7 +2801,7 @@ static int ProcessDefinition(const char *inName, const uint outRate, const uint 
             fclose(fp);
         return 0;
     }
-    hData.mHrirs = CreateArray(hData.mIrCount * hData . mIrSize);
+    hData.mHrirs = CreateArray(hData.mIrCount * hData.mIrSize);
     hData.mHrtds = CreateArray(hData.mIrCount);
     if(!ProcessSources(model, &tr, &hData))
     {
@@ -2745,11 +2811,11 @@ static int ProcessDefinition(const char *inName, const uint outRate, const uint 
             fclose(fp);
         return 0;
     }
-    if(inName != NULL)
+    if(fp != stdin)
         fclose(fp);
     if(equalize)
     {
-        dfa = CreateArray(1 + (hData.mFftSize/2));
+        double *dfa = CreateArray(1 + (hData.mFftSize/2));
         fprintf(stdout, "Calculating diffuse-field average...\n");
         CalculateDiffuseFieldAverage(&hData, surface, limit, dfa);
         fprintf(stdout, "Performing diffuse-field equalization...\n");
@@ -2775,84 +2841,60 @@ static int ProcessDefinition(const char *inName, const uint outRate, const uint 
     CalculateHrtds(model, (radius > DEFAULT_CUSTOM_RADIUS) ? radius : hData.mRadius, &hData);
     snprintf(rateStr, 8, "%u", hData.mIrRate);
     StrSubst(outName, "%r", rateStr, MAX_PATH_LEN, expName);
-    switch(outFormat)
-    {
-        case OF_MHR:
-            fprintf(stdout, "Creating MHR data set file...\n");
-            if(!StoreMhr(&hData, expName))
-            {
-                DestroyArray(hData.mHrtds);
-                DestroyArray(hData.mHrirs);
-                return 0;
-            }
-            break;
-        default:
-            break;
-    }
+    fprintf(stdout, "Creating MHR data set %s...\n", expName);
+    ret = StoreMhr(&hData, experimental, expName);
+
     DestroyArray(hData.mHrtds);
     DestroyArray(hData.mHrirs);
-    return 1;
+    return ret;
 }
 
 static void PrintHelp(const char *argv0, FILE *ofile)
 {
     fprintf(ofile, "Usage:  %s <command> [<option>...]\n\n", argv0);
-    fprintf(ofile, "Commands:\n");
-    fprintf(ofile, " -m, --make-mhr  Makes an OpenAL Soft compatible HRTF data set.\n");
-    fprintf(ofile, "                 Defaults output to: ./oalsoft_hrtf_%%r.mhr\n");
-    fprintf(ofile, " -h, --help      Displays this help information.\n\n");
     fprintf(ofile, "Options:\n");
-    fprintf(ofile, " -r=<rate>       Change the data set sample rate to the specified value and\n");
+    fprintf(ofile, " -m              Ignored for compatibility.\n");
+    fprintf(ofile, " -r <rate>       Change the data set sample rate to the specified value and\n");
     fprintf(ofile, "                 resample the HRIRs accordingly.\n");
-    fprintf(ofile, " -f=<points>     Override the FFT window size (defaults to the first power-\n");
-    fprintf(ofile, "                 of-two that fits four times the number of HRIR points).\n");
-    fprintf(ofile, " -e={on|off}     Toggle diffuse-field equalization (default: %s).\n", (DEFAULT_EQUALIZE ? "on" : "off"));
-    fprintf(ofile, " -s={on|off}     Toggle surface-weighted diffuse-field average (default: %s).\n", (DEFAULT_SURFACE ? "on" : "off"));
-    fprintf(ofile, " -l={<dB>|none}  Specify a limit to the magnitude range of the diffuse-field\n");
+    fprintf(ofile, " -f <points>     Override the FFT window size (default: %u).\n", DEFAULT_FFTSIZE);
+    fprintf(ofile, " -e {on|off}     Toggle diffuse-field equalization (default: %s).\n", (DEFAULT_EQUALIZE ? "on" : "off"));
+    fprintf(ofile, " -s {on|off}     Toggle surface-weighted diffuse-field average (default: %s).\n", (DEFAULT_SURFACE ? "on" : "off"));
+    fprintf(ofile, " -l {<dB>|none}  Specify a limit to the magnitude range of the diffuse-field\n");
     fprintf(ofile, "                 average (default: %.2f).\n", DEFAULT_LIMIT);
-    fprintf(ofile, " -w=<points>     Specify the size of the truncation window that's applied\n");
+    fprintf(ofile, " -w <points>     Specify the size of the truncation window that's applied\n");
     fprintf(ofile, "                 after minimum-phase reconstruction (default: %u).\n", DEFAULT_TRUNCSIZE);
-    fprintf(ofile, " -d={dataset|    Specify the model used for calculating the head-delay timing\n");
+    fprintf(ofile, " -d {dataset|    Specify the model used for calculating the head-delay timing\n");
     fprintf(ofile, "     sphere}     values (default: %s).\n", ((DEFAULT_HEAD_MODEL == HM_DATASET) ? "dataset" : "sphere"));
-    fprintf(ofile, " -c=<size>       Use a customized head radius measured ear-to-ear in meters.\n");
-    fprintf(ofile, " -i=<filename>   Specify an HRIR definition file to use (defaults to stdin).\n");
-    fprintf(ofile, " -o=<filename>   Specify an output file.  Overrides command-selected default.\n");
+    fprintf(ofile, " -c <size>       Use a customized head radius measured ear-to-ear in meters.\n");
+    fprintf(ofile, " -i <filename>   Specify an HRIR definition file to use (defaults to stdin).\n");
+    fprintf(ofile, " -o <filename>   Specify an output file.  Overrides command-selected default.\n");
     fprintf(ofile, "                 Use of '%%r' will be substituted with the data set sample rate.\n");
 }
 
 // Standard command line dispatch.
-int main(const int argc, const char *argv[])
+int main(int argc, char *argv[])
 {
     const char *inName = NULL, *outName = NULL;
-    OutputFormatT outFormat;
     uint outRate, fftSize;
     int equalize, surface;
+    int experimental;
     char *end = NULL;
     HeadModelT model;
     uint truncSize;
     double radius;
     double limit;
-    int argi;
+    int opt;
 
-    if(argc < 2 || strcmp(argv[1], "--help") == 0 || strcmp(argv[1], "-h") == 0)
+    GET_UNICODE_ARGS(&argc, &argv);
+
+    if(argc < 2)
     {
         fprintf(stdout, "HRTF Processing and Composition Utility\n\n");
         PrintHelp(argv[0], stdout);
-        return 0;
+        exit(EXIT_SUCCESS);
     }
 
-    if(strcmp(argv[1], "--make-mhr") == 0 || strcmp(argv[1], "-m") == 0)
-    {
-        outName = "./oalsoft_hrtf_%r.mhr";
-        outFormat = OF_MHR;
-    }
-    else
-    {
-        fprintf(stderr, "Error: Invalid command '%s'.\n\n", argv[1]);
-        PrintHelp(argv[0], stderr);
-        return -1;
-    }
-
+    outName = "./oalsoft_hrtf_%r.mhr";
     outRate = 0;
     fftSize = 0;
     equalize = DEFAULT_EQUALIZE;
@@ -2861,109 +2903,128 @@ int main(const int argc, const char *argv[])
     truncSize = DEFAULT_TRUNCSIZE;
     model = DEFAULT_HEAD_MODEL;
     radius = DEFAULT_CUSTOM_RADIUS;
+    experimental = 0;
 
-    argi = 2;
-    while(argi < argc)
+    while((opt=getopt(argc, argv, "mr:f:e:s:l:w:d:c:e:i:o:xh")) != -1)
     {
-        if(strncmp(argv[argi], "-r=", 3) == 0)
+        switch(opt)
         {
-            outRate = strtoul(&argv[argi][3], &end, 10);
+        case 'm':
+            fprintf(stderr, "Ignoring unused command '-m'.\n");
+            break;
+
+        case 'r':
+            outRate = strtoul(optarg, &end, 10);
             if(end[0] != '\0' || outRate < MIN_RATE || outRate > MAX_RATE)
             {
-                fprintf(stderr, "Error:  Expected a value from %u to %u for '-r'.\n", MIN_RATE, MAX_RATE);
-                return -1;
+                fprintf(stderr, "Error: Got unexpected value \"%s\" for option -%c, expected between %u to %u.\n", optarg, opt, MIN_RATE, MAX_RATE);
+                exit(EXIT_FAILURE);
             }
-        }
-        else if(strncmp(argv[argi], "-f=", 3) == 0)
-        {
-            fftSize = strtoul(&argv[argi][3], &end, 10);
+            break;
+
+        case 'f':
+            fftSize = strtoul(optarg, &end, 10);
             if(end[0] != '\0' || (fftSize&(fftSize-1)) || fftSize < MIN_FFTSIZE || fftSize > MAX_FFTSIZE)
             {
-                fprintf(stderr, "Error:  Expected a power-of-two value from %u to %u for '-f'.\n", MIN_FFTSIZE, MAX_FFTSIZE);
-                return -1;
+                fprintf(stderr, "Error: Got unexpected value \"%s\" for option -%c, expected a power-of-two between %u to %u.\n", optarg, opt, MIN_FFTSIZE, MAX_FFTSIZE);
+                exit(EXIT_FAILURE);
             }
-        }
-        else if(strncmp(argv[argi], "-e=", 3) == 0)
-        {
-            if(strcmp(&argv[argi][3], "on") == 0)
+            break;
+
+        case 'e':
+            if(strcmp(optarg, "on") == 0)
                 equalize = 1;
-            else if(strcmp(&argv[argi][3], "off") == 0)
+            else if(strcmp(optarg, "off") == 0)
                 equalize = 0;
             else
             {
-                fprintf(stderr, "Error:  Expected 'on' or 'off' for '-e'.\n");
-                return -1;
+                fprintf(stderr, "Error: Got unexpected value \"%s\" for option -%c, expected on or off.\n", optarg, opt);
+                exit(EXIT_FAILURE);
             }
-        }
-        else if(strncmp(argv[argi], "-s=", 3) == 0)
-        {
-            if(strcmp(&argv[argi][3], "on") == 0)
+            break;
+
+        case 's':
+            if(strcmp(optarg, "on") == 0)
                 surface = 1;
-            else if(strcmp(&argv[argi][3], "off") == 0)
+            else if(strcmp(optarg, "off") == 0)
                 surface = 0;
             else
             {
-                fprintf(stderr, "Error:  Expected 'on' or 'off' for '-s'.\n");
-                return -1;
+                fprintf(stderr, "Error: Got unexpected value \"%s\" for option -%c, expected on or off.\n", optarg, opt);
+                exit(EXIT_FAILURE);
             }
-        }
-        else if(strncmp(argv[argi], "-l=", 3) == 0)
-        {
-            if(strcmp(&argv[argi][3], "none") == 0)
+            break;
+
+        case 'l':
+            if(strcmp(optarg, "none") == 0)
                 limit = 0.0;
             else
             {
-                limit = strtod(&argv[argi] [3], &end);
+                limit = strtod(optarg, &end);
                 if(end[0] != '\0' || limit < MIN_LIMIT || limit > MAX_LIMIT)
                 {
-                    fprintf(stderr, "Error:  Expected 'none' or a value from %.2f to %.2f for '-l'.\n", MIN_LIMIT, MAX_LIMIT);
-                    return -1;
+                    fprintf(stderr, "Error: Got unexpected value \"%s\" for option -%c, expected between %.0f to %.0f.\n", optarg, opt, MIN_LIMIT, MAX_LIMIT);
+                    exit(EXIT_FAILURE);
                 }
             }
-        }
-        else if(strncmp(argv[argi], "-w=", 3) == 0)
-        {
-            truncSize = strtoul(&argv[argi][3], &end, 10);
+            break;
+
+        case 'w':
+            truncSize = strtoul(optarg, &end, 10);
             if(end[0] != '\0' || truncSize < MIN_TRUNCSIZE || truncSize > MAX_TRUNCSIZE || (truncSize%MOD_TRUNCSIZE))
             {
-                fprintf(stderr, "Error:  Expected a value from %u to %u in multiples of %u for '-w'.\n", MIN_TRUNCSIZE, MAX_TRUNCSIZE, MOD_TRUNCSIZE);
-                return -1;
+                fprintf(stderr, "Error: Got unexpected value \"%s\" for option -%c, expected multiple of %u between %u to %u.\n", optarg, opt, MOD_TRUNCSIZE, MIN_TRUNCSIZE, MAX_TRUNCSIZE);
+                exit(EXIT_FAILURE);
             }
-        }
-        else if(strncmp(argv[argi], "-d=", 3) == 0)
-        {
-            if(strcmp(&argv[argi][3], "dataset") == 0)
+            break;
+
+        case 'd':
+            if(strcmp(optarg, "dataset") == 0)
                 model = HM_DATASET;
-            else if(strcmp(&argv[argi][3], "sphere") == 0)
+            else if(strcmp(optarg, "sphere") == 0)
                 model = HM_SPHERE;
             else
             {
-                fprintf(stderr, "Error:  Expected 'dataset' or 'sphere' for '-d'.\n");
-                return -1;
+                fprintf(stderr, "Error: Got unexpected value \"%s\" for option -%c, expected dataset or sphere.\n", optarg, opt);
+                exit(EXIT_FAILURE);
             }
-        }
-        else if(strncmp(argv[argi], "-c=", 3) == 0)
-        {
-            radius = strtod(&argv[argi][3], &end);
+            break;
+
+        case 'c':
+            radius = strtod(optarg, &end);
             if(end[0] != '\0' || radius < MIN_CUSTOM_RADIUS || radius > MAX_CUSTOM_RADIUS)
             {
-                fprintf(stderr, "Error:  Expected a value from %.2f to %.2f for '-c'.\n", MIN_CUSTOM_RADIUS, MAX_CUSTOM_RADIUS);
-                return -1;
+                fprintf(stderr, "Error: Got unexpected value \"%s\" for option -%c, expected between %.2f to %.2f.\n", optarg, opt, MIN_CUSTOM_RADIUS, MAX_CUSTOM_RADIUS);
+                exit(EXIT_FAILURE);
             }
+            break;
+
+        case 'i':
+            inName = optarg;
+            break;
+
+        case 'o':
+            outName = optarg;
+            break;
+
+        case 'x':
+            experimental = 1;
+            break;
+
+        case 'h':
+            PrintHelp(argv[0], stdout);
+            exit(EXIT_SUCCESS);
+
+        default: /* '?' */
+            PrintHelp(argv[0], stderr);
+            exit(EXIT_FAILURE);
         }
-        else if(strncmp(argv[argi], "-i=", 3) == 0)
-            inName = &argv[argi][3];
-        else if(strncmp(argv[argi], "-o=", 3) == 0)
-            outName = &argv[argi][3];
-        else
-        {
-            fprintf(stderr, "Error:  Invalid option '%s'.\n", argv[argi]);
-            return -1;
-        }
-        argi++;
     }
-    if(!ProcessDefinition(inName, outRate, fftSize, equalize, surface, limit, truncSize, model, radius, outFormat, outName))
+
+    if(!ProcessDefinition(inName, outRate, fftSize, equalize, surface, limit,
+                          truncSize, model, radius, experimental, outName))
         return -1;
     fprintf(stdout, "Operation completed.\n");
-    return 0;
+
+    return EXIT_SUCCESS;
 }
