@@ -396,6 +396,53 @@ static const struct ChanMap MonoMap[1] = {
     { BackRight,   DEG2RAD( 150.0f), DEG2RAD(0.0f) },
     { SideLeft,    DEG2RAD( -90.0f), DEG2RAD(0.0f) },
     { SideRight,   DEG2RAD(  90.0f), DEG2RAD(0.0f) }
+
+/*
+ * RME22 actually is only using 14 speakers, and 2 LFE's. Not 22.
+ * 14 speakers in a 360-degree arrangement means 360/14 = 25.7 degrees seperation.
+ * Also, there's 2 LFE's! Try this for now [ben 5Sep17]
+ * >>> for i in range(1,15):
+ * ...  print( round( i * 25.7 - 180))
+ * ...
+ * -154
+ * -129
+ * -103
+ * -77
+ * -52
+ * -26
+ * 0
+ * 26
+ * 51
+ * 77
+ * 103
+ * 128
+ * 154
+ * 180
+ */
+}, XRME22Map[22] = {
+    { FrontLeft,   DEG2RAD(-154.0f), DEG2RAD(0.0f) },
+    { FrontRight,  DEG2RAD(-129.0f), DEG2RAD(0.0f) },
+    { FrontCenter, DEG2RAD(-103.0f), DEG2RAD(0.0f) },
+    { LFE, 0.0f, 0.0f },
+    { BackLeft,    DEG2RAD( -77.0f), DEG2RAD(0.0f) },
+    { BackRight,   DEG2RAD( -52.0f), DEG2RAD(0.0f) },
+    { SideLeft,    DEG2RAD( -26.0f), DEG2RAD(0.0f) },
+    { SideRight,   DEG2RAD(   0.0f), DEG2RAD(0.0f) },
+    { Aux0,        DEG2RAD(  26.0f), DEG2RAD(0.0f) },
+    { Aux1,        DEG2RAD(  51.0f), DEG2RAD(0.0f) },
+    { Aux2,        DEG2RAD(  77.0f), DEG2RAD(0.0f) },
+    { Aux3,        DEG2RAD( 103.0f), DEG2RAD(0.0f) },
+    { Aux4,        DEG2RAD( 128.0f), DEG2RAD(0.0f) },
+    { Aux5,        DEG2RAD( 154.0f), DEG2RAD(0.0f) },
+
+    { Aux6,        DEG2RAD(   0.0f), DEG2RAD(0.0f) },
+    { Aux7,        DEG2RAD(   0.0f), DEG2RAD(0.0f) },
+    { Aux8,        DEG2RAD(   0.0f), DEG2RAD(0.0f) },
+    { Aux9,        DEG2RAD(   0.0f), DEG2RAD(0.0f) },
+    { Aux10,       DEG2RAD(   0.0f), DEG2RAD(0.0f) },
+    { Aux11,       DEG2RAD(   0.0f), DEG2RAD(0.0f) },
+    { Aux12,       DEG2RAD(   0.0f), DEG2RAD(0.0f) },
+    { Aux13,       DEG2RAD(   0.0f), DEG2RAD(0.0f) }
 };
 
 static void CalcPanningAndFilters(ALvoice *voice, const ALfloat Distance, const ALfloat *Dir,

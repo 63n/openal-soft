@@ -1594,6 +1594,7 @@ static ALCenum ALCpulseCapture_open(ALCpulseCapture *self, const ALCchar *name)
             mapname = "front-left,front-right,front-center,lfe,rear-left,rear-right,side-left,side-right";
             break;
         case DevFmtAmbi3D:
+	case DevFmtXRME22:
             ERR("%s capture samples not supported\n", DevFmtChannelsString(device->FmtChans));
             pa_threaded_mainloop_unlock(self->loop);
             goto fail;

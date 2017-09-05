@@ -541,7 +541,7 @@ enum DevFmtChannels {
     /* Similar to 5.1, except using rear channels instead of sides */
     DevFmtX51Rear = 0x80000000,  /* Warning: following enums will now start from 0x80000000 */
 
-    DevFmtChannelsDefault = DevFmtStereo
+    DevFmtChannelsDefault = DevFmtStereo,
     DevFmtXRME22  = ALC_RME22_SOFT
 };
 

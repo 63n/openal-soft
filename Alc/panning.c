@@ -255,8 +255,8 @@ printf("numchans is %d\n", numchans);
 	// printf("chanmap i %s\n", chanmap[i]);
 	printf("chanmap Scale %f\n", chanmap[i].Scale);
 	printf("chanmap Index %d\n", chanmap[i].Index);
-	printf("coeffs i %d\n", coeffs[chanmap[i].Index]);
-	printf("gains i %d\n", gains[i]);
+	printf("coeffs i %g\n", coeffs[chanmap[i].Index]);
+	printf("gains i %g\n", gains[i]);
         gains[i] = chanmap[i].Scale * coeffs[chanmap[i].Index] * ingain;
     }
     for(;i < MAX_OUTPUT_CHANNELS;i++) {
@@ -313,6 +313,15 @@ static inline const char *GetLabelFromChannel(enum Channel channel)
         case LowerFrontRight: return "lower-front-right";
         case LowerBackLeft: return "lower-back-left";
         case LowerBackRight: return "lower-back-right";
+
+		case TopFrontLeft: return "top-front-left";
+		case TopFrontRight: return "top-front-right";
+		case TopBackLeft: return "top-back-left";
+		case TopBackRight: return "top-back-right";
+		case BottomFrontLeft: return "bottom-front-left";
+		case BottomFrontRight: return "botton-front-right";
+		case BottomBackLeft: return "bottom-back-left";
+		case BottomBackRight: return "bottom-back-right";
 
         case Aux0: return "aux-0";
         case Aux1: return "aux-1";
@@ -1163,6 +1172,7 @@ void aluInitRenderer(ALCdevice *device, ALint hrtf_id, enum HrtfRequestMode hrtf
         case DevFmtStereo:
         case DevFmtQuad:
         case DevFmtAmbi3D:
+		case DevFmtXRME22:
             break;
         }
         TRACE("Front stablizer %s\n", device->Stablizer ? "enabled" : "disabled");

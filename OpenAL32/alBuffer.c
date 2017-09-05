@@ -61,7 +61,7 @@ AL_API ALvoid AL_APIENTRY alGenBuffers(ALsizei n, ALuint *buffers)
     if(!context) return;
 
     if(!(n >= 0)) {
-	printf("alGenBuffers() AL_INVALID_VALUE n >=0\n");
+		printf("alGenBuffers() AL_INVALID_VALUE n >=0\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 }
 
@@ -163,9 +163,9 @@ AL_API ALvoid AL_APIENTRY alBufferData(ALuint buffer, ALenum format, const ALvoi
 // printf("alBufferData check size & freq: %d %d\n", (int)size, (int)freq);
 */
     if(!(size >= 0 && freq > 0)) {
-	printf("alBufferData() AL_INVALID_VALUE size and freq\n");
+		printf("alBufferData() AL_INVALID_VALUE size and freq\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
-}
+    }
 
 /*
 // printf("alBufferData/DecomposeUserFormat called\n");
@@ -178,8 +178,6 @@ AL_API ALvoid AL_APIENTRY alBufferData(ALuint buffer, ALenum format, const ALvoi
     align = ATOMIC_LOAD_SEQ(&albuf->UnpackAlign);
     if(SanitizeAlignment(srctype, &align) == AL_FALSE)
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
-}
-
 
 
     switch(srctype)
@@ -190,7 +188,6 @@ AL_API ALvoid AL_APIENTRY alBufferData(ALuint buffer, ALenum format, const ALvoi
         case UserFmtUShort:
         case UserFmtFloat:
 
-
 /*
 printf("About to calc framesize. srcchannels: 0x%x     srctype: 0x%x    align: %d\n", srcchannels, srctype, align);
 */
@@ -198,9 +195,9 @@ printf("About to calc framesize. srcchannels: 0x%x     srctype: 0x%x    align: %
             framesize = FrameSizeFromUserFmt(srcchannels, srctype) * align;
 
             if((size%framesize) != 0) {
-		printf("alBufferData() AL_INVALID_VALUE UserFmtByte\n");
+				printf("alBufferData() AL_INVALID_VALUE UserFmtByte\n");
                 SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
-}
+            }
 
             err = LoadData(albuf, freq, format, size/framesize*align,
                            srcchannels, srctype, data, align, AL_TRUE);
@@ -213,9 +210,9 @@ printf("About to calc framesize. srcchannels: 0x%x     srctype: 0x%x    align: %
         case UserFmtDouble:
             framesize = FrameSizeFromUserFmt(srcchannels, srctype) * align;
             if((size%framesize) != 0) {
-		printf("alBufferData() AL_INVALID_VALUE UserFmtInt\n");
+				printf("alBufferData() AL_INVALID_VALUE UserFmtInt\n");
                 SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
-		}
+			}
 
             switch(srcchannels)
             {
@@ -247,9 +244,9 @@ printf("About to calc framesize. srcchannels: 0x%x     srctype: 0x%x    align: %
 // printf("alBufferData check modulus: size vs framesize:  %f\n", (float)(size%framesize));
 */
             if((size%framesize) != 0) {
-		printf("alBufferData() AL_INVALID_VALUE UserFmtMulaw\n");
+				printf("alBufferData() AL_INVALID_VALUE UserFmtMulaw\n");
                 SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
-		}
+			}
 
             switch(srcchannels)
             {
@@ -277,9 +274,9 @@ printf("alBufferData srctype UserFmtIMA4\n");
             framesize  = (align-1)/2 + 4;
             framesize *= ChannelsFromUserFmt(srcchannels);
             if((size%framesize) != 0) {
-		printf("alBufferData() AL_INVALID_VALUE UserFmtIMA4\n");
+				printf("alBufferData() AL_INVALID_VALUE UserFmtIMA4\n");
                 SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
-}
+			}
 
             switch(srcchannels)
             {
@@ -311,9 +308,9 @@ printf("alBufferData check framesize:  %d\n", framesize);
 printf("alBufferData check modulus: size vs framesize:  %f\n", (float)(size%framesize));
 */
             if((size%framesize) != 0) {
-		printf("alBufferData() AL_INVALID_VALUE UserFmtMSADPCM\n");
+				printf("alBufferData() AL_INVALID_VALUE UserFmtMSADPCM\n");
                 SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
-		}
+			}
 
             switch(srcchannels)
             {
@@ -360,7 +357,7 @@ AL_API ALvoid AL_APIENTRY alBufferSubDataSOFT(ALuint buffer, ALenum format, cons
     if((albuf=LookupBuffer(device, buffer)) == NULL)
         SET_ERROR_AND_GOTO(context, AL_INVALID_NAME, done);
     if(!(length >= 0 && offset >= 0)) {
-	printf("alBufferSubDataSOFT() AL_INVALID_VALUE length and offset\n");
+		printf("alBufferSubDataSOFT() AL_INVALID_VALUE length and offset\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 	}
 
@@ -372,7 +369,7 @@ AL_API ALvoid AL_APIENTRY alBufferSubDataSOFT(ALuint buffer, ALenum format, cons
     if(SanitizeAlignment(srctype, &align) == AL_FALSE)
     {
         WriteUnlock(&albuf->lock);
-	printf("alBufferSubDataSOFT() AL_INVALID_VALUE writeLock\n");
+		printf("alBufferSubDataSOFT() AL_INVALID_VALUE writeLock\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
     }
     if(srcchannels != albuf->OriginalChannels || srctype != albuf->OriginalType)
@@ -407,7 +404,7 @@ AL_API ALvoid AL_APIENTRY alBufferSubDataSOFT(ALuint buffer, ALenum format, cons
        (offset%byte_align) != 0 || (length%byte_align) != 0)
     {
         WriteUnlock(&albuf->lock);
-	printf("alBufferSubDataSOFT() AL_INVALID_VALUE writeUnLock\n");
+		printf("alBufferSubDataSOFT() AL_INVALID_VALUE writeUnLock\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
     }
 
@@ -445,7 +442,7 @@ AL_API void AL_APIENTRY alBufferSamplesSOFT(ALuint buffer,
     if((albuf=LookupBuffer(device, buffer)) == NULL)
         SET_ERROR_AND_GOTO(context, AL_INVALID_NAME, done);
     if(!(samples >= 0 && samplerate != 0)) {
-	printf("alBufferSamplesSOFT() AL_INVALID_VALUE samples and samplerate\n");
+		printf("alBufferSamplesSOFT() AL_INVALID_VALUE samples and samplerate\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 	}
     if(IsValidType(type) == AL_FALSE || IsValidChannels(channels) == AL_FALSE)
@@ -456,7 +453,7 @@ AL_API void AL_APIENTRY alBufferSamplesSOFT(ALuint buffer,
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 
     if((samples%align) != 0) {
-	printf("alBufferSamplesSOFT() AL_INVALID_VALUE ratio samples vs align %f\n", (float)(samples%align));
+		printf("alBufferSamplesSOFT() AL_INVALID_VALUE ratio samples vs align %f\n", (float)(samples%align));
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 	}
 
@@ -487,7 +484,7 @@ AL_API void AL_APIENTRY alBufferSubSamplesSOFT(ALuint buffer,
     if((albuf=LookupBuffer(device, buffer)) == NULL)
         SET_ERROR_AND_GOTO(context, AL_INVALID_NAME, done);
     if(!(samples >= 0 && offset >= 0)) {
-	printf("alBufferSubSamplesSOFT() AL_INVALID_VALUE samples and offset\n");
+		printf("alBufferSubSamplesSOFT() AL_INVALID_VALUE samples and offset\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 	}
     if(IsValidType(type) == AL_FALSE)
@@ -498,7 +495,7 @@ AL_API void AL_APIENTRY alBufferSubSamplesSOFT(ALuint buffer,
     if(SanitizeAlignment(type, &align) == AL_FALSE)
     {
         WriteUnlock(&albuf->lock);
-	printf("alBufferSubSamplesSOFT() AL_INVALID_VALUE SanitizeAlignment\n");
+		printf("alBufferSubSamplesSOFT() AL_INVALID_VALUE SanitizeAlignment\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
     }
     if(channels != (ALenum)albuf->FmtChannels)
@@ -509,13 +506,13 @@ AL_API void AL_APIENTRY alBufferSubSamplesSOFT(ALuint buffer,
     if(offset > albuf->SampleLen || samples > albuf->SampleLen-offset)
     {
         WriteUnlock(&albuf->lock);
-	printf("alBufferSubSamplesSOFT() AL_INVALID_VALUE offset > sampleLen or samples > sampleLen\n");
+		printf("alBufferSubSamplesSOFT() AL_INVALID_VALUE offset > sampleLen or samples > sampleLen\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
     }
     if((samples%align) != 0)
     {
         WriteUnlock(&albuf->lock);
-	printf("alBufferSubSamplesSOFT() AL_INVALID_VALUE samples vs align\n");
+		printf("alBufferSubSamplesSOFT() AL_INVALID_VALUE samples vs align\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
     }
 
@@ -547,7 +544,7 @@ AL_API void AL_APIENTRY alGetBufferSamplesSOFT(ALuint buffer,
     if((albuf=LookupBuffer(device, buffer)) == NULL)
         SET_ERROR_AND_GOTO(context, AL_INVALID_NAME, done);
     if(!(samples >= 0 && offset >= 0)) {
-	printf("alGetBufferSamplesSOFT() AL_INVALID_VALUE samples and offset\n");
+		printf("alGetBufferSamplesSOFT() AL_INVALID_VALUE samples and offset\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 	}
     if(IsValidType(type) == AL_FALSE)
@@ -558,7 +555,7 @@ AL_API void AL_APIENTRY alGetBufferSamplesSOFT(ALuint buffer,
     if(SanitizeAlignment(type, &align) == AL_FALSE)
     {
         ReadUnlock(&albuf->lock);
-	printf("alGetBufferSamplesSOFT() AL_INVALID_VALUE SanitizeAlignment\n");
+		printf("alGetBufferSamplesSOFT() AL_INVALID_VALUE SanitizeAlignment\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
     }
     if(channels != (ALenum)albuf->FmtChannels)
@@ -569,13 +566,13 @@ AL_API void AL_APIENTRY alGetBufferSamplesSOFT(ALuint buffer,
     if(offset > albuf->SampleLen || samples > albuf->SampleLen-offset)
     {
         ReadUnlock(&albuf->lock);
-	printf("alGetBufferSamplesSOFT() AL_INVALID_VALUE offset > SampleLen\n");
+		printf("alGetBufferSamplesSOFT() AL_INVALID_VALUE offset > SampleLen\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
     }
     if((samples%align) != 0)
     {
         ReadUnlock(&albuf->lock);
-	printf("alGetBufferSamplesSOFT() AL_INVALID_VALUE samples and align\n");
+		printf("alGetBufferSamplesSOFT() AL_INVALID_VALUE samples and align\n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
     }
 
@@ -672,7 +669,7 @@ AL_API void AL_APIENTRY alBufferfv(ALuint buffer, ALenum param, const ALfloat *v
         SET_ERROR_AND_GOTO(context, AL_INVALID_NAME, done);
 
     if(!(values)) {
-	printf("alBufferfv() AL_INVALID_VALUE \n");
+		printf("alBufferfv() AL_INVALID_VALUE \n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 	}
     switch(param)
@@ -705,7 +702,7 @@ AL_API void AL_APIENTRY alBufferi(ALuint buffer, ALenum param, ALint value)
     {
     case AL_UNPACK_BLOCK_ALIGNMENT_SOFT:
         if(!(value >= 0)) {
-		printf("alBufferi() AL_UNPACK_BLOCK_ALIGNMENT_SOFT: AL_INVALID_VALUE \n");
+			printf("alBufferi() AL_UNPACK_BLOCK_ALIGNMENT_SOFT: AL_INVALID_VALUE \n");
             SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 	}
         ATOMIC_STORE_SEQ(&albuf->UnpackAlign, value);
@@ -713,7 +710,7 @@ AL_API void AL_APIENTRY alBufferi(ALuint buffer, ALenum param, ALint value)
 
     case AL_PACK_BLOCK_ALIGNMENT_SOFT:
         if(!(value >= 0)) {
-		printf("alBufferi() AL_PACK_BLOCK_ALIGNMENT_SOFT: AL_INVALID_VALUE \n");
+			printf("alBufferi() AL_PACK_BLOCK_ALIGNMENT_SOFT: AL_INVALID_VALUE \n");
             SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 	}
         ATOMIC_STORE_SEQ(&albuf->PackAlign, value);
@@ -778,7 +775,7 @@ AL_API void AL_APIENTRY alBufferiv(ALuint buffer, ALenum param, const ALint *val
         SET_ERROR_AND_GOTO(context, AL_INVALID_NAME, done);
 
     if(!(values)) {
-	printf("alBufferiv() AL_INVALID_VALUE \n");
+		printf("alBufferiv() AL_INVALID_VALUE \n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 	}
     switch(param)
@@ -794,7 +791,7 @@ AL_API void AL_APIENTRY alBufferiv(ALuint buffer, ALenum param, const ALint *val
            values[1] > albuf->SampleLen)
         {
             WriteUnlock(&albuf->lock);
-		printf("alBufferiv() case AL_LOOP_POINTS_SOFT: AL_INVALID_VALUE \n");
+			printf("alBufferiv() case AL_LOOP_POINTS_SOFT: AL_INVALID_VALUE \n");
             SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
         }
 
@@ -866,7 +863,7 @@ AL_API void AL_APIENTRY alGetBuffer3f(ALuint buffer, ALenum param, ALfloat *valu
         SET_ERROR_AND_GOTO(context, AL_INVALID_NAME, done);
 
     if(!(value1 && value2 && value3)) {
-	printf("alGetBuffer3f() AL_INVALID_VALUE \n");
+		printf("alGetBuffer3f() AL_INVALID_VALUE \n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 	}
     switch(param)
@@ -902,7 +899,7 @@ AL_API void AL_APIENTRY alGetBufferfv(ALuint buffer, ALenum param, ALfloat *valu
         SET_ERROR_AND_GOTO(context, AL_INVALID_NAME, done);
 
     if(!(values)) {
-	printf("alGetBufferfv() AL_INVALID_VALUE \n");
+		printf("alGetBufferfv() AL_INVALID_VALUE \n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 	}
     switch(param)
@@ -932,7 +929,7 @@ AL_API ALvoid AL_APIENTRY alGetBufferi(ALuint buffer, ALenum param, ALint *value
         SET_ERROR_AND_GOTO(context, AL_INVALID_NAME, done);
 
     if(!(value)) {
-	printf("alGetBufferi() AL_INVALID_VALUE \n");
+		printf("alGetBufferi() AL_INVALID_VALUE \n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 	}
     switch(param)
@@ -1000,7 +997,7 @@ AL_API void AL_APIENTRY alGetBuffer3i(ALuint buffer, ALenum param, ALint *value1
         SET_ERROR_AND_GOTO(context, AL_INVALID_NAME, done);
 
     if(!(value1 && value2 && value3)) {
-	printf("alGetBuffer3i() AL_INVALID_VALUE \n");
+		printf("alGetBuffer3i() AL_INVALID_VALUE \n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 	}
     switch(param)
@@ -1045,7 +1042,7 @@ AL_API void AL_APIENTRY alGetBufferiv(ALuint buffer, ALenum param, ALint *values
         SET_ERROR_AND_GOTO(context, AL_INVALID_NAME, done);
 
     if(!(values)) {
-	printf("alGetBufferiv() AL_INVALID_VALUE \n");
+		printf("alGetBufferiv() AL_INVALID_VALUE \n");
         SET_ERROR_AND_GOTO(context, AL_INVALID_VALUE, done);
 	}
     switch(param)
